@@ -1,0 +1,265 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../services/connect4_service.dart';
+import '../../services/firebase_service.dart';
+import '../../utils/constants.dart';
+
+class Connect4Screen extends StatelessWidget {
+  final String roomId;
+  const Connect4Screen({super.key, required this.roomId});
+
+  @override
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (_) => Connect4Service()..listenToGame(roomId),
+      child: _Connect4View(roomId: roomId),
+    );
+  }
+}
+
+class _Connect4View extends StatefulWidget {
+  final String roomId;
+  const _Connect4View({required this.roomId});
+  @override
+  State<_Connect4View> createState() => _Connect4ViewState();
+}
+
+class _Connect4ViewState extends State<_Connect4View> {
+  @override
+  Widget build(BuildContext context) {
+    final game = context.watch<Connect4Service>();
+    final fb = context.read<FirebaseService>();
+    final myId = fb.currentUser?.id ?? '';
+    final myName = fb.currentUser?.name ?? '';
+
+    final amPlayer1 = game.player1Id == myId;
+    final amPlayer2 = game.player2Id == myId;
+    final amPlayer = amPlayer1 || amPlayer2;
+    final myPiece = amPlayer1 ? 1 : 2;
+    final isMyTurn = (game.currentTurn == 1 && amPlayer1) ||
+        (game.currentTurn == 2 && amPlayer2);
+
+    return Scaffold(
+      backgroundColor: SimulColors.black,
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        title: const Text('Connect 4'),
+        actions: [
+          if (fb.isHost || fb.isModerator(myId))
+            TextButton(
+              onPressed: () => game.restartGame(widget.roomId),
+              child: const Text('Restart',
+                  style: TextStyle(color: SimulColors.white)),
+            ),
+        ],
+      ),
+      body: game.isActive
+          ? _buildGame(context, game, fb, myId, myName, amPlayer, myPiece, isMyTurn)
+          : _buildLobby(context, game, fb, myId, myName),
+    );
+  }
+
+  Widget _buildLobby(BuildContext ctx, Connect4Service game,
+      FirebaseService fb, String myId, String myName) {
+    return Center(
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Text('Connect 4',
+            style: TextStyle(
+                color: SimulColors.white,
+                fontSize: 28,
+                fontWeight: FontWeight.bold)),
+        const SizedBox(height: 24),
+        ElevatedButton(
+          onPressed: () => game.startGame(widget.roomId, myId, myName),
+          child: const Text('Start Game'),
+        ),
+        const SizedBox(height: 12),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 32),
+          child: Text('Start the game and share the room code to play!',
+              style: TextStyle(color: SimulColors.faint),
+              textAlign: TextAlign.center),
+        ),
+      ]),
+    );
+  }
+
+  Widget _buildGame(
+      BuildContext ctx,
+      Connect4Service game,
+      FirebaseService fb,
+      String myId,
+      String myName,
+      bool amPlayer,
+      int myPiece,
+      bool isMyTurn,
+      ) {
+    return Column(
+      children: [
+        // ── Status bar ────────────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            if (game.winner == 0) ...[
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                _PlayerChip(
+                    name: game.player1Name ?? 'Player 1',
+                    piece: 1,
+                    active: game.currentTurn == 1),
+                const SizedBox(width: 16),
+                const Text('vs',
+                    style: TextStyle(color: SimulColors.faint)),
+                const SizedBox(width: 16),
+                _PlayerChip(
+                    name: game.player2Name ?? 'Player 2',
+                    piece: 2,
+                    active: game.currentTurn == 2),
+              ]),
+              const SizedBox(height: 6),
+              Text(
+                isMyTurn ? 'Your turn!' : 'Waiting…',
+                style: TextStyle(
+                    color: isMyTurn ? SimulColors.success : SimulColors.faint,
+                    fontWeight: FontWeight.w600),
+              ),
+            ] else ...[
+              Text(
+                game.winner == -1
+                    ? 'Draw! 🤝'
+                    : '${game.winner == 1 ? game.player1Name : game.player2Name} wins! 🎉',
+                style: const TextStyle(
+                    color: SimulColors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              ElevatedButton(
+                onPressed: () => game.restartGame(widget.roomId),
+                child: const Text('Play Again'),
+              ),
+            ],
+            if (!amPlayer && game.player2Id == null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: TextButton(
+                  onPressed: () =>
+                      game.joinAsPlayer(widget.roomId, myId, myName),
+                  child: const Text('Join as Player 2'),
+                ),
+              ),
+          ]),
+        ),
+
+        // ── Board ─────────────────────────────────────────────────────────
+        // Expanded (a direct child of this Column) gives the board bounded
+        // height; LayoutBuilder then sizes the grid to fit without overflow.
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final cellSize = (constraints.maxWidth - 32 - 8) / kCols;
+              final boardHeight = cellSize * kRows + 8;
+
+              return Center(
+                child: Container(
+                  width: constraints.maxWidth - 32,
+                  height: boardHeight.clamp(0.0, constraints.maxHeight - 8),
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A3A5C),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: List.generate(kRows, (row) => Row(
+                      children: List.generate(kCols, (col) {
+                        final cell = game.board[row][col];
+                        return Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.all(3),
+                            child: AspectRatio(
+                              aspectRatio: 1,
+                              child: GestureDetector(
+                                onTap: amPlayer && isMyTurn && game.winner == 0
+                                    ? () => game.dropPiece(
+                                        widget.roomId, myId, col)
+                                    : null,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: _cellColor(cell),
+                                    shape: BoxShape.circle,
+                                    boxShadow: cell != 0
+                                        ? [
+                                            BoxShadow(
+                                              color: _cellColor(cell)
+                                                  .withOpacity(0.5),
+                                              blurRadius: 6,
+                                            )
+                                          ]
+                                        : null,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    )),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+      ],
+    );
+  }
+
+  Color _cellColor(int cell) {
+    switch (cell) {
+      case 1:
+        return const Color(0xFFF43F5E); // Red
+      case 2:
+        return const Color(0xFFF59E0B); // Yellow
+      default:
+        return const Color(0xFF0A1628); // Empty
+    }
+  }
+}
+
+class _PlayerChip extends StatelessWidget {
+  final String name;
+  final int piece;
+  final bool active;
+  const _PlayerChip(
+      {required this.name, required this.piece, required this.active});
+
+  @override
+  Widget build(BuildContext context) {
+    final color =
+    piece == 1 ? const Color(0xFFF43F5E) : const Color(0xFFF59E0B);
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: active ? color.withOpacity(0.15) : Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: active ? color : SimulColors.border),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Text(name,
+            style: TextStyle(
+                color: active ? SimulColors.white : SimulColors.faint,
+                fontSize: 13,
+                fontWeight:
+                active ? FontWeight.w600 : FontWeight.normal)),
+      ]),
+    );
+  }
+}

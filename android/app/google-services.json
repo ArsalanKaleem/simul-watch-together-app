@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "576360354973",
+    "project_id": "simul-deskweb-app",
+    "storage_bucket": "simul-deskweb-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:576360354973:android:26bc781e2659231c5ef074",
+        "android_client_info": {
+          "package_name": "com.example.simul"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBGZA_sOrslRRvKjFB7XcFKMn03VPlT3w4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

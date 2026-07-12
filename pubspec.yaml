@@ -1,0 +1,42 @@
+name: simul
+description: SIMUL — watch YouTube together in perfect sync, chat, share your screen, and play games with friends.
+publish_to: 'none'
+version: 1.1.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+  flutter: ">=3.19.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # ── Firebase ────────────────────────────────────────────────────────────────
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  cloud_firestore: ^5.4.4
+
+  # ── Real-time media (LiveKit — replaces mediasoup/flutter_webrtc/socket_io) ──
+  livekit_client: ^2.2.5
+  http: ^1.2.2
+
+  # ── YouTube playback (custom iframe-API player) ──────────────────────────────
+  webview_flutter: ^4.9.0
+  # Windows-only WebView2 backend used by videoPlayerWidget.dart on desktop
+  webview_windows: ^0.4.0
+
+  # ── UI / state / utils ─────────────────────────────────────────────────────
+  provider: ^6.1.2
+  google_fonts: ^6.2.1
+  intl: ^0.19.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  # Uncomment and point at your asset folders if you add any:
+  # assets:
+  #   - assets/images/

@@ -1,0 +1,439 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_windows/webview_windows.dart' as win;
+import '../utils/constants.dart';
+
+/// SIMUL Video Player — true cross-platform inline playback.
+///
+///   • Web / Android / iOS / macOS  -> webview_flutter
+///   • Windows                      -> webview_windows (Edge WebView2)
+///   • Anything else / init failure -> copy-link fallback card
+///
+/// The YouTube IFrame API + sync bridge is identical across engines; only the
+/// JS<->Dart transport differs (FlutterBridge vs window.chrome.webview).
+class VideoPlayerWidget extends StatefulWidget {
+  final String videoId;
+  final Function(bool isPlaying, double position) onPlayPause;
+  final Function(double position) onSeek;
+  final Function(double position, bool isPlaying) onPositionUpdate;
+  final VoidCallback? onVideoEnded;
+
+  const VideoPlayerWidget({
+    super.key,
+    required this.videoId,
+    required this.onPlayPause,
+    required this.onSeek,
+    required this.onPositionUpdate,
+    this.onVideoEnded,
+  });
+
+  @override
+  State<VideoPlayerWidget> createState() => VideoPlayerWidgetState();
+}
+
+enum _Engine { flutterWebView, windowsWebView, none }
+
+class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
+  _Engine _engine = _Engine.none;
+
+  // flutter webview
+  WebViewController? _ctrl;
+  // windows webview
+  win.WebviewController? _winCtrl;
+  StreamSubscription? _winSub;
+  bool _winFailed = false;
+
+  Timer? _positionTimer;
+  Timer? _readyTimeout;
+  bool _isPlaying = false;
+  bool _playerReady = false;
+  double _currentPosition = 0;
+  bool _isSyncing = false;
+  double _lastReported = -1;
+  bool _copied = false;
+
+  double get currentPosition => _currentPosition;
+  bool get isPlaying => _isPlaying;
+
+  static bool get _flutterWebViewSupported =>
+      kIsWeb ||
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS ||
+      defaultTargetPlatform == TargetPlatform.macOS;
+
+  static bool get _isWindows =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_flutterWebViewSupported) {
+      _engine = _Engine.flutterWebView;
+      _initFlutterWebView();
+    } else if (_isWindows) {
+      _engine = _Engine.windowsWebView;
+      _initWindowsWebView();
+    } else {
+      _engine = _Engine.none;
+    }
+  }
+
+  // ── Engine init ─────────────────────────────────────────────────────────────
+
+  void _initFlutterWebView() {
+    final ctrl = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setUserAgent(
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+          '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')
+      ..addJavaScriptChannel('FlutterBridge',
+          onMessageReceived: (m) => _handleMessage(m.message))
+      ..loadHtmlString(_buildHtml(widget.videoId, windows: false));
+    _ctrl = ctrl;
+    _armReadyTimeout();
+  }
+
+  Future<void> _initWindowsWebView() async {
+    try {
+      final c = win.WebviewController();
+      await c.initialize();
+      _winSub = c.webMessage.listen((dynamic m) {
+        _handleMessage(m is String ? m : m.toString());
+      });
+      await c.setBackgroundColor(Colors.black);
+      await c.setPopupWindowPolicy(win.WebviewPopupWindowPolicy.deny);
+      await c.loadStringContent(_buildHtml(widget.videoId, windows: true));
+      _winCtrl = c;
+      if (mounted) setState(() {});
+      _armReadyTimeout();
+    } catch (e) {
+      debugPrint('Windows WebView init failed: $e');
+      if (mounted) setState(() => _winFailed = true);
+    }
+  }
+
+  void _armReadyTimeout() {
+    _readyTimeout?.cancel();
+    _readyTimeout = Timer(const Duration(seconds: 12), () {
+      if (!_playerReady && mounted) _reload();
+    });
+  }
+
+  void _reload() {
+    final html = _buildHtml(widget.videoId,
+        windows: _engine == _Engine.windowsWebView);
+    if (_engine == _Engine.flutterWebView) {
+      _ctrl?.loadHtmlString(html);
+    } else if (_engine == _Engine.windowsWebView) {
+      _winCtrl?.loadStringContent(html);
+    }
+  }
+
+  // ── Dart -> JS ──────────────────────────────────────────────────────────────
+
+  void _runJs(String js) {
+    if (_engine == _Engine.flutterWebView) {
+      _ctrl?.runJavaScript(js);
+    } else if (_engine == _Engine.windowsWebView) {
+      _winCtrl?.executeScript(js);
+    }
+  }
+
+  // ── JS -> Dart ──────────────────────────────────────────────────────────────
+
+  void _handleMessage(String raw) {
+    if (raw == 'ready') {
+      _playerReady = true;
+      _readyTimeout?.cancel();
+      return;
+    }
+    if (raw.startsWith('state:')) {
+      final s = raw.substring(6);
+      final wasPlaying = _isPlaying;
+      _isPlaying = s == 'playing';
+      if (wasPlaying != _isPlaying && !_isSyncing) {
+        widget.onPlayPause(_isPlaying, _currentPosition);
+        if (_isPlaying) _startTimer(); else _stopTimer();
+      }
+    } else if (raw.startsWith('pos:')) {
+      final pos = double.tryParse(raw.substring(4)) ?? 0;
+      final jump = (pos - _currentPosition).abs();
+      if (jump > 2.0 && !_isSyncing) widget.onSeek(pos);
+      _currentPosition = pos;
+      if ((_currentPosition - _lastReported).abs() >= 1.0) {
+        _lastReported = _currentPosition;
+        widget.onPositionUpdate(_currentPosition, _isPlaying);
+      }
+    } else if (raw == 'ended') {
+      _isPlaying = false;
+      _stopTimer();
+      widget.onVideoEnded?.call();
+    } else if (raw.startsWith('error:')) {
+      debugPrint('YT player error: ${raw.substring(6)}');
+    }
+  }
+
+  void _startTimer() {
+    _positionTimer?.cancel();
+    _positionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_playerReady) _runJs('sendPos()');
+    });
+  }
+
+  void _stopTimer() => _positionTimer?.cancel();
+
+  // ── HTML ────────────────────────────────────────────────────────────────────
+
+  String _buildHtml(String videoId, {required bool windows}) {
+    final transport = windows
+        ? 'window.chrome.webview.postMessage(m);'
+        : 'FlutterBridge.postMessage(m);';
+    return '''
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box }
+  body { background:#000; overflow:hidden; width:100vw; height:100vh }
+  #player { width:100%; height:100% }
+</style>
+</head>
+<body>
+<div id="player"></div>
+<script>
+  function post(m) { $transport }
+
+  var tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  var firstScript = document.getElementsByTagName('script')[0];
+  firstScript.parentNode.insertBefore(tag, firstScript);
+
+  var player;
+  var lastState = -1;
+  var blocking  = false;
+  var playerReady = false;
+
+  function onYouTubeIframeAPIReady() {
+    player = new YT.Player('player', {
+      videoId: '$videoId',
+      host: 'https://www.youtube-nocookie.com',
+      playerVars: {
+        autoplay:1, controls:1, rel:0, modestbranding:1,
+        playsinline:1, enablejsapi:1, iv_load_policy:3,
+        origin:'https://www.youtube-nocookie.com'
+      },
+      events: {
+        onReady: function(e) { playerReady = true; post('ready'); },
+        onStateChange: function(e) {
+          if (blocking) return;
+          if (e.data === YT.PlayerState.PLAYING && lastState !== 1) {
+            lastState = 1; post('state:playing');
+          } else if (e.data === YT.PlayerState.PAUSED && lastState !== 2) {
+            lastState = 2; post('state:paused');
+          } else if (e.data === YT.PlayerState.ENDED) {
+            post('ended');
+          }
+        },
+        onError: function(e) { post('error:' + e.data); }
+      }
+    });
+  }
+
+  function sendPos() {
+    if (player && player.getCurrentTime) post('pos:' + player.getCurrentTime());
+  }
+  function playV()  { if (player && playerReady) { blocking=false; lastState=1; player.playVideo(); } }
+  function pauseV() { if (player && playerReady) { blocking=false; lastState=2; player.pauseVideo(); } }
+  function seekTo(s) {
+    if (!player || !playerReady) return;
+    blocking = true; player.seekTo(s, true);
+    setTimeout(function(){ blocking = false; }, 1500);
+  }
+  function syncTo(s, play) {
+    if (!player || !playerReady) return;
+    blocking = true; player.seekTo(s, true);
+    if (play) { lastState=1; player.playVideo(); } else { lastState=2; player.pauseVideo(); }
+    setTimeout(function(){ blocking = false; }, 1500);
+  }
+</script>
+</body>
+</html>
+''';
+  }
+
+  // ── Public API (RoomScreen via GlobalKey) ───────────────────────────────────
+
+  void play() {
+    _isSyncing = true;
+    if (_playerReady) _runJs('playV()');
+    Future.delayed(const Duration(milliseconds: 300), () => _isSyncing = false);
+  }
+
+  void pause() {
+    _isSyncing = true;
+    if (_playerReady) _runJs('pauseV()');
+    Future.delayed(const Duration(milliseconds: 300), () => _isSyncing = false);
+  }
+
+  void seekTo(double s) {
+    _isSyncing = true;
+    if (_playerReady) _runJs('seekTo($s)');
+    Future.delayed(const Duration(milliseconds: 1500), () => _isSyncing = false);
+  }
+
+  void syncTo(double s, bool playing) {
+    _isSyncing = true;
+    _isPlaying = playing;
+    if (_playerReady) _runJs('syncTo($s,$playing)');
+    Future.delayed(const Duration(milliseconds: 1500), () => _isSyncing = false);
+  }
+
+  void _copyLink() {
+    Clipboard.setData(ClipboardData(
+        text: 'https://www.youtube.com/watch?v=${widget.videoId}'));
+    setState(() => _copied = true);
+    Future.delayed(const Duration(seconds: 2),
+        () => mounted ? setState(() => _copied = false) : null);
+  }
+
+  @override
+  void didUpdateWidget(VideoPlayerWidget old) {
+    super.didUpdateWidget(old);
+    if (old.videoId != widget.videoId) {
+      _stopTimer();
+      _playerReady = false;
+      _isPlaying = false;
+      _currentPosition = 0;
+      _lastReported = -1;
+      _copied = false;
+      if (_engine == _Engine.none) {
+        setState(() {});
+      } else {
+        _reload();
+        _armReadyTimeout();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _stopTimer();
+    _readyTimeout?.cancel();
+    _winSub?.cancel();
+    _winCtrl?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_engine == _Engine.flutterWebView && _ctrl != null) {
+      return AspectRatio(
+        aspectRatio: 16 / 9,
+        child: WebViewWidget(controller: _ctrl!),
+      );
+    }
+    if (_engine == _Engine.windowsWebView && !_winFailed) {
+      final ready = _winCtrl != null && _winCtrl!.value.isInitialized;
+      return AspectRatio(
+        aspectRatio: 16 / 9,
+        child: ready
+            ? win.Webview(_winCtrl!)
+            : Container(
+                color: SimulColors.black,
+                child: const Center(
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: SimulColors.white),
+                ),
+              ),
+      );
+    }
+    return _DesktopFallbackPlayer(
+      videoId: widget.videoId,
+      copied: _copied,
+      onCopy: _copyLink,
+    );
+  }
+}
+
+/// Last-resort card (Linux, or Windows where WebView2 runtime is missing).
+class _DesktopFallbackPlayer extends StatelessWidget {
+  final String videoId;
+  final bool copied;
+  final VoidCallback onCopy;
+  const _DesktopFallbackPlayer({
+    required this.videoId,
+    required this.copied,
+    required this.onCopy,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.network(
+              'https://img.youtube.com/vi/$videoId/hqdefault.jpg',
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) =>
+                  Container(color: SimulColors.surface),
+            ),
+            Container(color: Colors.black.withOpacity(0.58)),
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 28),
+                    child: Text(
+                      'Inline playback unavailable here. Copy the link to '
+                      'watch in your browser.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: SimulColors.faint, fontSize: 12),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  GestureDetector(
+                    onTap: onCopy,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 9),
+                      decoration: BoxDecoration(
+                        color: copied
+                            ? SimulColors.success.withOpacity(0.15)
+                            : SimulColors.white,
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(copied ? Icons.check_rounded : Icons.copy_rounded,
+                            size: 15,
+                            color: copied
+                                ? SimulColors.success
+                                : SimulColors.black),
+                        const SizedBox(width: 7),
+                        Text(copied ? 'Copied!' : 'Copy video link',
+                            style: TextStyle(
+                                color: copied
+                                    ? SimulColors.success
+                                    : SimulColors.black,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600)),
+                      ]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

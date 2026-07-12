@@ -1,0 +1,1560 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import '../utils/constants.dart';
+import '../services/firebase_service.dart';
+import '../services/livekit_service.dart';
+import '../services/youtube_sync_service.dart';
+import '../widgets/videoPlayerWidget.dart';
+import '../widgets/live_share_viewer.dart';
+import '../widgets/chat/floating_chat.dart';
+import '../widgets/reactions/live_reactions.dart';
+import '../widgets/queue/video_queue_panel.dart';
+import '../widgets/game/connect4_screen.dart';
+import '../models/activity_log.dart';
+import '../screens/about_screen.dart';
+
+class RoomScreen extends StatefulWidget {
+  final String roomId;
+  final String userName;
+  const RoomScreen({super.key, required this.roomId, required this.userName});
+
+  @override
+  State<RoomScreen> createState() => _RoomScreenState();
+}
+
+class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _urlCtrl     = TextEditingController();
+  final _videoKey    = GlobalKey<VideoPlayerWidgetState>();
+  late TabController _bottomTab;
+
+  // Video state
+  String? _currentVideoId;
+  String  _currentVideoTitle = '';
+  String  _myUserId          = '';
+
+  // View mode: 'youtube' | 'screenshare'
+  String _viewMode = 'youtube';
+
+  StreamSubscription? _syncSub;
+  bool _showReactions = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _bottomTab = TabController(length: 3, vsync: this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _init());
+  }
+
+  Future<void> _init() async {
+    try {
+      final fb   = context.read<FirebaseService>();
+      final sync = context.read<YouTubeSyncService>();
+      final lk   = context.read<LiveKitService>();
+
+      await fb.initializeRoom(widget.roomId, widget.userName);
+      _myUserId = fb.currentUser?.id ?? '';
+
+      if (_myUserId.isNotEmpty) {
+        // LiveKit's server handles presence, tracks, and reconnection for
+        // us — no manual peer mesh or Socket.IO signalling needed.
+        lk.addListener(_onLiveKitChanged);
+        await lk.connect(
+          roomId     : widget.roomId,
+          userId     : _myUserId,
+          displayName: widget.userName,
+          role       : fb.isHost ? SimulRole.host : SimulRole.viewer,
+        );
+      }
+
+      sync.listenToVideoSync(widget.roomId, _myUserId);
+      _syncSub = sync.videoStateStream.listen((state) {
+        if (!mounted) return;
+        final action  = state['action']    as String?;
+        final pos     = (state['position'] as num?)?.toDouble() ?? 0.0;
+        final playing = state['isPlaying'] as bool? ?? true;
+        switch (action) {
+          case 'load':
+            setState(() {
+              _currentVideoId    = state['videoId'] as String?;
+              _currentVideoTitle = state['title']   as String? ?? '';
+              _viewMode          = 'youtube';
+            });
+          case 'play':
+            _videoKey.currentState?.syncTo(pos, true);
+          case 'pause':
+            _videoKey.currentState?.syncTo(pos, false);
+          case 'seek':
+            _videoKey.currentState?.seekTo(pos);
+          case 'sync':
+            final vs = _videoKey.currentState;
+            if (vs != null && (vs.currentPosition - pos).abs() > 3.0) {
+              vs.syncTo(pos, playing);
+            }
+        }
+      });
+    } catch (e) {
+      debugPrint('Room init error: $e');
+      if (mounted) _snack('Could not load room state', isError: true);
+    }
+  }
+
+  /// Flips the view between YouTube and screen-share as sharing starts/stops,
+  /// mirroring how the old ScreenShareService listener used to behave.
+  void _onLiveKitChanged() {
+    if (!mounted) return;
+    final lk = context.read<LiveKitService>();
+    final isSharingNow = lk.isSharing || lk.hasRemoteShare;
+    if (isSharingNow && _viewMode != 'screenshare') {
+      setState(() => _viewMode = 'screenshare');
+    } else if (!isSharingNow && _viewMode == 'screenshare') {
+      setState(() => _viewMode = 'youtube');
+    }
+  }
+
+  // ── Video loading ──────────────────────────────────────────────────────────
+
+  void _loadVideo(String videoId, String title) {
+    setState(() {
+      _currentVideoId    = videoId;
+      _currentVideoTitle = title;
+      _viewMode          = 'youtube';
+    });
+    context.read<YouTubeSyncService>().sendVideoLoaded(
+        widget.roomId, _myUserId, videoId, title: title);
+  }
+
+  void _loadFromUrl() {
+    final url = _urlCtrl.text.trim();
+    if (url.isEmpty) return;
+    final id = _extractYouTubeId(url);
+    if (id == null) {
+      _snack('Could not recognise a YouTube URL', isError: true);
+      return;
+    }
+    _loadVideo(id, 'YouTube Video');
+    _urlCtrl.clear();
+  }
+
+  /// Extracts a YouTube video ID from any common URL format.
+  String? _extractYouTubeId(String input) {
+    final patterns = [
+      RegExp(r'(?:youtube\.com/watch\?(?:.*&)?v=|youtu\.be/|youtube\.com/shorts/|youtube\.com/embed/)([a-zA-Z0-9_-]{11})'),
+      RegExp(r'^([a-zA-Z0-9_-]{11})$'), // raw ID
+    ];
+    for (final p in patterns) {
+      final m = p.firstMatch(input);
+      if (m != null) return m.group(1);
+    }
+    return null;
+  }
+
+  // ── Screen share ───────────────────────────────────────────────────────────
+
+  Future<void> _toggleScreenShare() async {
+    if (!AppConfig.isScreenShareSupported) {
+      _snack('Screen sharing is only available on desktop and web', isError: true);
+      return;
+    }
+    final lk = context.read<LiveKitService>();
+    final wasSharing = lk.isSharing;
+    await lk.toggleScreenShare();
+    if (!wasSharing && !lk.isSharing) {
+      // Attempted to start but it didn't take (permission denied / cancelled).
+      _snack('Screen share cancelled or unavailable');
+    }
+  }
+
+  // ── Voice chat ─────────────────────────────────────────────────────────────
+
+  Future<void> _toggleVoice() async {
+    await context.read<LiveKitService>().toggleMic();
+  }
+
+  // ── Invite / participants / activity ────────────────────────────────────────
+
+  void _showInvite() {
+    final wide = MediaQuery.of(context).size.width >= 700;
+    if (wide) {
+      showDialog(
+        context: context,
+        barrierColor: Colors.black.withOpacity(0.6),
+        builder: (_) => Dialog(
+          backgroundColor: Colors.transparent,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Container(
+                padding: const EdgeInsets.all(28),
+                decoration: BoxDecoration(
+                  color: SimulColors.card,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: SimulColors.border),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.4),
+                      blurRadius: 40,
+                      offset: const Offset(0, 20),
+                    ),
+                  ],
+                ),
+                child: _InviteContent(roomId: widget.roomId, onDone: () {
+                  Navigator.pop(context);
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: SimulColors.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: _InviteContent(roomId: widget.roomId, onDone: () {
+          Navigator.pop(context);
+        }),
+      ),
+    );
+  }
+
+  void _showParticipants() {
+    final fb = context.read<FirebaseService>();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: SimulColors.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => ChangeNotifierProvider.value(
+        value: fb,
+        child: _ParticipantSheet(roomId: widget.roomId),
+      ),
+    );
+  }
+
+  void _showActivity() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: SimulColors.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _ActivitySheet(
+        roomId: widget.roomId,
+        stream: context.read<FirebaseService>().getActivityStream(widget.roomId),
+      ),
+    );
+  }
+
+  String? _lastSnackMsg;
+  DateTime? _lastSnackAt;
+
+  void _snack(String msg, {bool isError = false}) {
+    final now = DateTime.now();
+    // Swallow duplicate messages fired in quick succession (e.g. a
+    // connection retry loop) instead of letting them stack up.
+    if (_lastSnackMsg == msg &&
+        _lastSnackAt != null &&
+        now.difference(_lastSnackAt!) < const Duration(seconds: 3)) {
+      return;
+    }
+    _lastSnackMsg = msg;
+    _lastSnackAt  = now;
+
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(
+        content: Text(msg),
+        backgroundColor: isError ? SimulColors.error : SimulColors.surface,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    final fb               = context.watch<FirebaseService>();
+    final lk                = context.watch<LiveKitService>();
+    final participantCount = fb.participantIds.length;
+    final isSharing        = lk.isSharing || lk.hasRemoteShare;
+
+    return Scaffold(
+      key: _scaffoldKey,
+      backgroundColor: SimulColors.black,
+      endDrawer: _AppDrawer(
+        onInvite          : _showInvite,
+        onActivity        : _showActivity,
+        onToggleReactions : () => setState(() => _showReactions = !_showReactions),
+        showReactions     : _showReactions,
+      ),
+      appBar: AppBar(
+        backgroundColor: SimulColors.black,
+        toolbarHeight: 64,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded, color: SimulColors.white),
+          onPressed: () async {
+            final leave = await _confirmLeave();
+            if (leave && mounted) {
+              if (lk.isSharing) await lk.stopScreenShare();
+              await context.read<LiveKitService>().disconnect();
+              await context.read<FirebaseService>().leaveRoom();
+              if (mounted) Navigator.pop(context);
+            }
+          },
+        ),
+        title: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Text('SIMUL', style: TextStyle(
+                color: SimulColors.white, fontSize: 16,
+                fontWeight: FontWeight.w700, letterSpacing: 1)),
+            const SizedBox(width: 8),
+            _StatusPill(active: participantCount >= 2),
+          ]),
+          _RoomCodeChip(roomId: widget.roomId),
+        ]),
+        actions: [
+          // Screen share toggle (desktop/web only)
+          if (AppConfig.isScreenShareSupported)
+            IconButton(
+              icon: Icon(
+                lk.isSharing
+                    ? Icons.stop_screen_share_rounded
+                    : Icons.screen_share_rounded,
+                color: lk.isSharing ? SimulColors.shareActive : SimulColors.faint,
+                size: 20,
+              ),
+              tooltip: lk.isSharing ? 'Stop sharing' : 'Share screen / tab',
+              onPressed: _toggleScreenShare,
+            ),
+
+          // Voice chat
+          IconButton(
+            icon: Icon(
+              lk.isMicOn && !lk.isMicMuted ? Icons.mic_rounded : Icons.mic_off_rounded,
+              color: lk.isMicOn && !lk.isMicMuted ? SimulColors.success : SimulColors.faint,
+              size: 20,
+            ),
+            onPressed: _toggleVoice,
+          ),
+
+          // Participant count
+          GestureDetector(
+            onTap: _showParticipants,
+            child: Container(
+              margin: const EdgeInsets.only(right: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: SimulColors.surface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: SimulColors.border),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.people_outline, color: SimulColors.faint, size: 14),
+                const SizedBox(width: 4),
+                Text('$participantCount',
+                    style: const TextStyle(color: SimulColors.faint, fontSize: 12)),
+              ]),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.menu_rounded, color: SimulColors.faint),
+            onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+          ),
+        ],
+      ),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final wide = constraints.maxWidth >= 1000;
+          return wide
+              ? _wideBody(participantCount, isSharing)
+              : _mobileBody(participantCount, isSharing);
+        },
+      ),
+      floatingActionButton: FloatingChat(
+          roomId: widget.roomId, userName: widget.userName),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+    );
+  }
+
+  // ── Responsive layout pieces ────────────────────────────────────────────────
+
+  Widget _videoStack(int participantCount, bool isSharing) {
+    return Stack(children: [
+      _buildMainView(participantCount),
+      if (_showReactions && (_currentVideoId != null || isSharing))
+        Positioned.fill(child: LiveReactions(roomId: widget.roomId)),
+    ]);
+  }
+
+  Widget _belowVideoBars(bool isSharing) {
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      if (_viewMode == 'youtube' && _currentVideoId != null)
+        _UrlBar(ctrl: _urlCtrl, onLoad: _loadFromUrl),
+      if (_viewMode == 'screenshare')
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          color: SimulColors.surface,
+          child: Row(children: [
+            const Icon(Icons.screen_share_rounded,
+                color: SimulColors.shareActive, size: 16),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                context.watch<LiveKitService>().isSharing
+                    ? 'Sharing your screen with everyone in the room'
+                    : 'Someone is sharing their screen',
+                style: const TextStyle(color: SimulColors.faint, fontSize: 12),
+              ),
+            ),
+            if (context.watch<LiveKitService>().isSharing)
+              GestureDetector(
+                onTap: _toggleScreenShare,
+                child: const Text('Stop',
+                    style: TextStyle(
+                        color: SimulColors.error,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+              ),
+          ]),
+        ),
+    ]);
+  }
+
+  Widget _tabBar({bool desktop = false}) {
+    if (!desktop) {
+      return Container(
+        decoration: const BoxDecoration(
+            border: Border(top: BorderSide(color: SimulColors.border))),
+        child: TabBar(
+          controller: _bottomTab,
+          indicatorColor: SimulColors.white,
+          indicatorSize: TabBarIndicatorSize.label,
+          labelColor: SimulColors.white,
+          unselectedLabelColor: SimulColors.faint,
+          labelStyle:
+          const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+          tabs: const [
+            Tab(icon: Icon(Icons.queue_music_rounded, size: 18), text: 'Queue'),
+            Tab(icon: Icon(Icons.games_rounded, size: 18), text: 'Games'),
+            Tab(icon: Icon(Icons.bar_chart_rounded, size: 18), text: 'Activity'),
+          ],
+        ),
+      );
+    }
+
+    // Desktop: a pill-style segmented control instead of a cramped TabBar.
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: SimulColors.black,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: SimulColors.border),
+      ),
+      child: AnimatedBuilder(
+        animation: _bottomTab,
+        builder: (_, __) {
+          const items = [
+            (Icons.queue_music_rounded, 'Queue'),
+            (Icons.games_rounded, 'Games'),
+            (Icons.bar_chart_rounded, 'Activity'),
+          ];
+          return Row(
+            children: List.generate(items.length, (i) {
+              final selected = _bottomTab.index == i;
+              return Expanded(
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: () => setState(() => _bottomTab.index = i),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(vertical: 9),
+                      decoration: BoxDecoration(
+                        color: selected ? SimulColors.card : Colors.transparent,
+                        borderRadius: BorderRadius.circular(7),
+                        border: selected
+                            ? Border.all(color: SimulColors.border)
+                            : null,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(items[i].$1,
+                              size: 15,
+                              color: selected
+                                  ? SimulColors.white
+                                  : SimulColors.faint),
+                          const SizedBox(width: 6),
+                          Text(items[i].$2,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: selected
+                                    ? SimulColors.white
+                                    : SimulColors.faint,
+                              )),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _tabViews() => TabBarView(
+    controller: _bottomTab,
+    children: [
+      VideoQueuePanel(
+          roomId: widget.roomId,
+          onVideoSelected: (id, title) => _loadVideo(id, title)),
+      Connect4Screen(roomId: widget.roomId),
+      _ActivityTab(roomId: widget.roomId),
+    ],
+  );
+
+  /// Phone / portrait layout — video on top, tabs below.
+  Widget _mobileBody(int participantCount, bool isSharing) {
+    return Column(children: [
+      _videoStack(participantCount, isSharing),
+      _belowVideoBars(isSharing),
+      _tabBar(),
+      Expanded(child: _tabViews()),
+    ]);
+  }
+
+  /// Desktop / wide layout — centred video on the left, docked panel on the right.
+  Widget _wideBody(int participantCount, bool isSharing) {
+    final fb = context.watch<FirebaseService>();
+    return Row(children: [
+      Expanded(
+        child: Container(
+          color: SimulColors.black,
+          padding: const EdgeInsets.fromLTRB(32, 28, 24, 28),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1200),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border.all(color: SimulColors.border),
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _videoStack(participantCount, isSharing),
+                                _belowVideoBars(isSharing),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        _DesktopParticipantsStrip(
+                          roomId: widget.roomId,
+                          onInvite: _showInvite,
+                          onTapParticipants: _showParticipants,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      Container(
+        width: 420,
+        decoration: const BoxDecoration(
+          color: SimulColors.surface,
+          border: Border(left: BorderSide(color: SimulColors.border)),
+        ),
+        child: Column(children: [
+          _SidebarHeader(
+            roomId: widget.roomId,
+            isHost: fb.isHost,
+            onInvite: _showInvite,
+          ),
+          _tabBar(desktop: true),
+          Expanded(child: _tabViews()),
+        ]),
+      ),
+    ]);
+  }
+
+  Widget _buildMainView(int participantCount) {
+    final lk = context.watch<LiveKitService>();
+
+    // Local screen share takes priority — this is our own preview.
+    if (_viewMode == 'screenshare' && lk.isSharing) {
+      return LiveShareViewer(isLocal: true, onStop: _toggleScreenShare);
+    }
+
+    // Someone else in the room is sharing their screen/tab — show it live.
+    if (lk.hasRemoteShare) {
+      return const LiveShareViewer(isLocal: false);
+    }
+
+    // YouTube player
+    if (_currentVideoId != null) {
+      return VideoPlayerWidget(
+        key      : _videoKey,
+        videoId  : _currentVideoId!,
+        onPlayPause: (playing, pos) {
+          final sync = context.read<YouTubeSyncService>();
+          if (playing) sync.sendPlayEvent(widget.roomId, _myUserId, pos);
+          else         sync.sendPauseEvent(widget.roomId, _myUserId, pos);
+        },
+        onSeek: (pos) => context.read<YouTubeSyncService>()
+            .sendSeekEvent(widget.roomId, _myUserId, pos),
+        onPositionUpdate: (pos, playing) => context.read<YouTubeSyncService>()
+            .sendPositionSync(widget.roomId, _myUserId, pos, playing),
+        onVideoEnded: _onVideoEnded,
+      );
+    }
+
+    // Placeholder
+    return _VideoPlaceholder(
+      urlCtrl         : _urlCtrl,
+      onLoad          : _loadFromUrl,
+      participantCount: participantCount,
+      onShareTap      : AppConfig.isScreenShareSupported ? _toggleScreenShare : null,
+    );
+  }
+
+  void _onVideoEnded() async {
+    final svc        = context.read<FirebaseService>();
+    final queueItems = await svc.getQueueStream(widget.roomId).first;
+    if (queueItems.isNotEmpty && mounted) {
+      final next = queueItems.first;
+      await svc.removeFromQueue(widget.roomId, next.id);
+      _loadVideo(next.videoId, next.title);
+    }
+  }
+
+  Future<bool> _confirmLeave() async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: SimulColors.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Leave Room?',
+            style: TextStyle(color: SimulColors.white)),
+        content: const Text('Are you sure you want to leave?',
+            style: TextStyle(color: SimulColors.faint)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Stay', style: TextStyle(color: SimulColors.faint)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    ) ??
+        false;
+  }
+
+  @override
+  void dispose() {
+    _syncSub?.cancel();
+    _urlCtrl.dispose();
+    _bottomTab.dispose();
+    final lk = context.read<LiveKitService>();
+    lk.removeListener(_onLiveKitChanged);
+    lk.disconnect();
+    context.read<YouTubeSyncService>().stopListening();
+    super.dispose();
+  }
+}
+
+// ── Sub-widgets ───────────────────────────────────────────────────────────────
+
+class _StatusPill extends StatelessWidget {
+  final bool active;
+  const _StatusPill({required this.active});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+    decoration: BoxDecoration(
+      color: (active ? SimulColors.success : SimulColors.muted).withOpacity(0.15),
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(
+          color: (active ? SimulColors.success : SimulColors.muted).withOpacity(0.4)),
+    ),
+    child: Row(mainAxisSize: MainAxisSize.min, children: [
+      Container(
+        width: 5, height: 5,
+        decoration: BoxDecoration(
+            color: active ? SimulColors.success : SimulColors.muted,
+            shape: BoxShape.circle),
+      ),
+      const SizedBox(width: 4),
+      Text(active ? 'Live' : 'Waiting',
+          style: TextStyle(
+              color: active ? SimulColors.success : SimulColors.muted,
+              fontSize: 10, fontWeight: FontWeight.w600)),
+    ]),
+  );
+}
+
+class _VideoPlaceholder extends StatelessWidget {
+  final TextEditingController urlCtrl;
+  final VoidCallback onLoad;
+  final int participantCount;
+  final VoidCallback? onShareTap;
+  const _VideoPlaceholder({
+    required this.urlCtrl,
+    required this.onLoad,
+    required this.participantCount,
+    this.onShareTap,
+  });
+
+  @override
+  Widget build(BuildContext context) => AspectRatio(
+    aspectRatio: 16 / 9,
+    child: Container(
+      color: SimulColors.surface,
+      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        const Icon(Icons.play_circle_outline_rounded,
+            color: SimulColors.muted, size: 48),
+        const SizedBox(height: 12),
+        Text(
+          participantCount < 2
+              ? 'Waiting for someone to join…'
+              : 'Paste a YouTube link to begin',
+          style: const TextStyle(color: SimulColors.faint, fontSize: 13),
+          textAlign: TextAlign.center,
+        ),
+        if (participantCount >= 2) ...[
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: _UrlBar(ctrl: urlCtrl, onLoad: onLoad),
+          ),
+          if (onShareTap != null) ...[
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: onShareTap,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: SimulColors.shareActive.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: SimulColors.shareActive.withOpacity(0.4)),
+                ),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.screen_share_rounded,
+                      color: SimulColors.shareActive, size: 16),
+                  SizedBox(width: 8),
+                  Text('Share your screen / tab',
+                      style: TextStyle(
+                          color: SimulColors.shareActive,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500)),
+                ]),
+              ),
+            ),
+          ],
+        ],
+      ]),
+    ),
+  );
+}
+
+class _UrlBar extends StatelessWidget {
+  final TextEditingController ctrl;
+  final VoidCallback onLoad;
+  const _UrlBar({required this.ctrl, required this.onLoad});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    decoration: const BoxDecoration(
+        color: SimulColors.surface,
+        border: Border(bottom: BorderSide(color: SimulColors.border))),
+    child: Row(children: [
+      const Icon(Icons.link_rounded, color: SimulColors.faint, size: 18),
+      const SizedBox(width: 8),
+      Expanded(
+        child: TextField(
+          controller: ctrl,
+          style: const TextStyle(color: SimulColors.white, fontSize: 13),
+          decoration: const InputDecoration(
+            hintText: 'Paste YouTube URL…',
+            hintStyle: TextStyle(color: SimulColors.subtle, fontSize: 13),
+            border: InputBorder.none,
+            isDense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
+          onSubmitted: (_) => onLoad(),
+        ),
+      ),
+      GestureDetector(
+        onTap: onLoad,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+              color: SimulColors.white,
+              borderRadius: BorderRadius.circular(7)),
+          child: const Text('Load',
+              style: TextStyle(
+                  color: SimulColors.black,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600)),
+        ),
+      ),
+    ]),
+  );
+}
+
+// ── Participant sheet ──────────────────────────────────────────────────────────
+
+class _ParticipantSheet extends StatelessWidget {
+  final String roomId;
+  const _ParticipantSheet({required this.roomId});
+
+  @override
+  Widget build(BuildContext context) {
+    final fb     = context.watch<FirebaseService>();
+    final lk     = context.watch<LiveKitService>();
+    final ids    = fb.participantIds;
+    final names  = fb.participantNames;
+    final isHost = fb.isHost;
+    final myId   = fb.currentUser?.id ?? '';
+
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Row(children: [
+          const Text('Participants',
+              style: TextStyle(
+                  color: SimulColors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700)),
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+                color: SimulColors.muted,
+                borderRadius: BorderRadius.circular(8)),
+            child: Text('${ids.length}',
+                style: const TextStyle(color: SimulColors.white, fontSize: 12)),
+          ),
+        ]),
+        const SizedBox(height: 16),
+        ...List.generate(ids.length, (i) {
+          final id   = ids[i];
+          final name = i < names.length && names[i].trim().isNotEmpty
+              ? names[i]
+              : 'User';
+          final initial = name.trim().isNotEmpty
+              ? name.trim()[0].toUpperCase()
+              : '?';
+          final isMod      = fb.isModerator(id);
+          final isRoomHost = id == fb.hostId;
+          final isSpeaking = lk.speakingParticipants.contains(id);
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(children: [
+              Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                    color: SimulColors.muted,
+                    shape: BoxShape.circle,
+                    border: isSpeaking
+                        ? Border.all(color: SimulColors.success, width: 2)
+                        : null),
+                child: Center(
+                    child: Text(initial,
+                        style: const TextStyle(
+                            color: SimulColors.white,
+                            fontWeight: FontWeight.w600))),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Text(name,
+                  style: const TextStyle(color: SimulColors.white, fontSize: 14))),
+              if (isMod) const _Badge('MOD', SimulColors.info),
+              if (isRoomHost) const _Badge('HOST', SimulColors.white),
+              if (isHost && id != myId) ...[
+                const SizedBox(width: 6),
+                GestureDetector(
+                  onTap: () => isMod
+                      ? fb.demoteModerator(roomId, id, name)
+                      : fb.promoteModerator(roomId, id, name),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: SimulColors.surface,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: SimulColors.border),
+                    ),
+                    child: Text(isMod ? 'Demote' : 'Mod',
+                        style: const TextStyle(
+                            color: SimulColors.faint, fontSize: 11)),
+                  ),
+                ),
+              ],
+            ]),
+          );
+        }),
+      ]),
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  final String label;
+  final Color color;
+  const _Badge(this.label, this.color);
+
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(left: 6),
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    decoration: BoxDecoration(
+      color: color.withOpacity(0.1),
+      borderRadius: BorderRadius.circular(4),
+      border: Border.all(color: color.withOpacity(0.3)),
+    ),
+    child: Text(label,
+        style: TextStyle(
+            color: color, fontSize: 9, fontWeight: FontWeight.w700)),
+  );
+}
+
+// ── Shared chrome (used on both mobile and desktop) ─────────────────────────────
+
+/// A room code that's also a tap-to-copy control, with a small confirmation
+/// state so people get feedback without needing to watch for a snackbar.
+class _RoomCodeChip extends StatefulWidget {
+  final String roomId;
+  final bool large;
+  const _RoomCodeChip({required this.roomId, this.large = false});
+
+  @override
+  State<_RoomCodeChip> createState() => _RoomCodeChipState();
+}
+
+class _RoomCodeChipState extends State<_RoomCodeChip> {
+  bool _copied = false;
+  Timer? _resetTimer;
+
+  Future<void> _copy() async {
+    await Clipboard.setData(ClipboardData(text: widget.roomId));
+    if (!mounted) return;
+    setState(() => _copied = true);
+    _resetTimer?.cancel();
+    _resetTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _copied = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _resetTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final large = widget.large;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: Tooltip(
+        message: _copied ? 'Copied!' : 'Tap to copy room code',
+        child: GestureDetector(
+          onTap: _copy,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: EdgeInsets.symmetric(
+                horizontal: large ? 18 : 6, vertical: large ? 10 : 1),
+            decoration: BoxDecoration(
+              color: _copied
+                  ? SimulColors.success.withOpacity(0.12)
+                  : (large ? SimulColors.surface : Colors.transparent),
+              borderRadius: BorderRadius.circular(large ? 12 : 5),
+              border: large
+                  ? Border.all(
+                  color: _copied ? SimulColors.success : SimulColors.border)
+                  : null,
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Text(widget.roomId,
+                  style: TextStyle(
+                    color: _copied
+                        ? SimulColors.success
+                        : (large ? SimulColors.white : SimulColors.faint),
+                    fontSize: large ? 26 : 11,
+                    fontWeight: large ? FontWeight.w800 : FontWeight.w600,
+                    letterSpacing: large ? 4 : 0.5,
+                    height: 1,
+                  )),
+              SizedBox(width: large ? 10 : 4),
+              Icon(
+                _copied ? Icons.check_rounded : Icons.copy_rounded,
+                size: large ? 18 : 10,
+                color: _copied ? SimulColors.success : SimulColors.faint,
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shared body for the invite sheet/dialog — same content, different chrome
+/// depending on whether it's presented as a bottom sheet or a dialog.
+class _InviteContent extends StatelessWidget {
+  final String roomId;
+  final VoidCallback onDone;
+  const _InviteContent({required this.roomId, required this.onDone});
+
+  void _snack(BuildContext context, String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg),
+      backgroundColor: SimulColors.surface,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      Row(children: [
+        const Expanded(
+          child: Text('Invite to Room',
+              style: TextStyle(
+                  color: SimulColors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 17)),
+        ),
+        MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            onTap: onDone,
+            child: const Icon(Icons.close_rounded,
+                size: 20, color: SimulColors.faint),
+          ),
+        ),
+      ]),
+      const SizedBox(height: 20),
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        decoration: BoxDecoration(
+          color: SimulColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: SimulColors.border),
+        ),
+        child: Column(children: [
+          const Text('ROOM CODE',
+              style: TextStyle(
+                  color: SimulColors.faint,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 1.2)),
+          const SizedBox(height: 10),
+          _RoomCodeChip(roomId: roomId, large: true),
+        ]),
+      ),
+      const SizedBox(height: 16),
+      Row(children: [
+        Expanded(
+            child: OutlinedButton.icon(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: roomId));
+                _snack(context, 'Room code copied!');
+                onDone();
+              },
+              icon: const Icon(Icons.copy_rounded,
+                  size: 16, color: SimulColors.faint),
+              label: const Text('Copy Code',
+                  style: TextStyle(color: SimulColors.faint)),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: SimulColors.border),
+                shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(vertical: 13),
+              ),
+            )),
+        const SizedBox(width: 12),
+        Expanded(
+            child: ElevatedButton.icon(
+              onPressed: () {
+                final link = 'Join my SIMUL room!\nCode: $roomId';
+                Clipboard.setData(ClipboardData(text: link));
+                _snack(context, 'Invite text copied!');
+                onDone();
+              },
+              icon: const Icon(Icons.share_rounded, size: 16),
+              label: const Text('Share'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            )),
+      ]),
+    ]);
+  }
+}
+
+// ── Desktop-only chrome ─────────────────────────────────────────────────────────
+
+/// Sits atop the sidebar on wide screens: room identity + quick invite.
+class _SidebarHeader extends StatelessWidget {
+  final String roomId;
+  final bool isHost;
+  final VoidCallback onInvite;
+  const _SidebarHeader({
+    required this.roomId,
+    required this.isHost,
+    required this.onInvite,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+      decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: SimulColors.border))),
+      child: Row(children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                const Text('ROOM CODE',
+                    style: TextStyle(
+                        color: SimulColors.subtle,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.2)),
+                if (isHost) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: SimulColors.white.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('HOST',
+                        style: TextStyle(
+                            color: SimulColors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.6)),
+                  ),
+                ],
+              ]),
+              const SizedBox(height: 6),
+              Transform.translate(
+                offset: const Offset(-18, 0),
+                child: _RoomCodeChip(roomId: roomId, large: true),
+              ),
+            ],
+          ),
+        ),
+        _IconGhostButton(
+          icon: Icons.person_add_alt_1_rounded,
+          tooltip: 'Invite',
+          onTap: onInvite,
+        ),
+      ]),
+    );
+  }
+}
+
+class _IconGhostButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  const _IconGhostButton(
+      {required this.icon, required this.tooltip, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: SimulColors.card,
+        borderRadius: BorderRadius.circular(9),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(9),
+          onTap: onTap,
+          child: Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(9),
+              border: Border.all(color: SimulColors.border),
+            ),
+            child: Icon(icon, size: 17, color: SimulColors.white),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A thin strip under the video showing who's in the room — avatars +
+/// names at a glance, without needing to open the participants sheet.
+class _DesktopParticipantsStrip extends StatelessWidget {
+  final String roomId;
+  final VoidCallback onInvite;
+  final VoidCallback onTapParticipants;
+  const _DesktopParticipantsStrip({
+    required this.roomId,
+    required this.onInvite,
+    required this.onTapParticipants,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fb    = context.watch<FirebaseService>();
+    final names = fb.participantNames;
+    final myId  = fb.currentUser?.id ?? '';
+    final ids   = fb.participantIds;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: SimulColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: SimulColors.border),
+      ),
+      child: Row(children: [
+        GestureDetector(
+          onTap: onTapParticipants,
+          child: SizedBox(
+            width: names.isEmpty
+                ? 0
+                : (names.length.clamp(0, 5) - 1) * 20.0 + 28,
+            height: 28,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: List.generate(
+                names.length.clamp(0, 5),
+                    (i) => Positioned(
+                  left: i * 20.0,
+                  child: _Avatar(
+                    label: names[i],
+                    isMe: ids.length > i && ids[i] == myId,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        SizedBox(width: names.isEmpty ? 0 : 8),
+        Expanded(
+          child: Text(
+            names.isEmpty
+                ? 'Waiting for someone to join…'
+                : names.join(', '),
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: SimulColors.faint, fontSize: 12.5),
+          ),
+        ),
+        TextButton.icon(
+          onPressed: onInvite,
+          icon: const Icon(Icons.link_rounded, size: 14),
+          label: const Text('Invite'),
+          style: TextButton.styleFrom(
+            foregroundColor: SimulColors.faint,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _Avatar extends StatelessWidget {
+  final String label;
+  final bool isMe;
+  const _Avatar({required this.label, required this.isMe});
+
+  @override
+  Widget build(BuildContext context) {
+    final initial = label.isNotEmpty ? label[0].toUpperCase() : '?';
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: isMe ? SimulColors.white : SimulColors.card,
+        border: Border.all(color: SimulColors.surface, width: 2),
+      ),
+      child: Center(
+        child: Text(initial,
+            style: TextStyle(
+              color: isMe ? SimulColors.black : SimulColors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            )),
+      ),
+    );
+  }
+}
+
+// ── Activity sheets ────────────────────────────────────────────────────────────
+
+class _ActivitySheet extends StatelessWidget {
+  final String roomId;
+  final Stream<List<ActivityLog>> stream;
+  const _ActivitySheet({required this.roomId, required this.stream});
+
+  @override
+  Widget build(BuildContext context) => Column(children: [
+    const Padding(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, 12),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text('Activity',
+            style: TextStyle(
+                color: SimulColors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w700)),
+      ),
+    ),
+    Expanded(
+      child: StreamBuilder<List<ActivityLog>>(
+        stream: stream,
+        builder: (_, snap) {
+          if (!snap.hasData) return const Center(
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: SimulColors.white));
+          final logs = snap.data!;
+          if (logs.isEmpty) return const Center(
+              child: Text('No activity yet',
+                  style: TextStyle(color: SimulColors.subtle)));
+          return ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            itemCount: logs.length,
+            itemBuilder: (_, i) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(children: [
+                Container(
+                  width: 6, height: 6,
+                  margin: const EdgeInsets.only(right: 10, top: 4),
+                  decoration: const BoxDecoration(
+                      color: SimulColors.muted, shape: BoxShape.circle),
+                ),
+                Expanded(child: Text(logs[i].message,
+                    style: const TextStyle(
+                        color: SimulColors.faint, fontSize: 13))),
+              ]),
+            ),
+          );
+        },
+      ),
+    ),
+  ]);
+}
+
+class _ActivityTab extends StatelessWidget {
+  final String roomId;
+  const _ActivityTab({required this.roomId});
+
+  @override
+  Widget build(BuildContext context) {
+    final svc = context.read<FirebaseService>();
+    return StreamBuilder<List<ActivityLog>>(
+      stream: svc.getActivityStream(roomId),
+      builder: (_, snap) {
+        if (!snap.hasData) return const Center(
+            child: CircularProgressIndicator(
+                strokeWidth: 2, color: SimulColors.white));
+        final logs = snap.data!;
+        if (logs.isEmpty) return const Center(
+            child: Text('No activity yet',
+                style: TextStyle(color: SimulColors.subtle, fontSize: 13)));
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: logs.length,
+          itemBuilder: (_, i) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Icon(Icons.circle, size: 6, color: SimulColors.muted),
+              const SizedBox(width: 10),
+              Expanded(child: Text(logs[i].message,
+                  style: const TextStyle(
+                      color: SimulColors.faint, fontSize: 13))),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── End-drawer ────────────────────────────────────────────────────────────────
+
+class _AppDrawer extends StatelessWidget {
+  final VoidCallback onInvite;
+  final VoidCallback onActivity;
+  final VoidCallback onToggleReactions;
+  final bool showReactions;
+
+  const _AppDrawer({
+    required this.onInvite,
+    required this.onActivity,
+    required this.onToggleReactions,
+    required this.showReactions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Drawer(
+      backgroundColor: SimulColors.surface,
+      width: 280,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+              child: Row(children: [
+                Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(
+                    color: SimulColors.card,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: SimulColors.border),
+                  ),
+                  child: const Center(
+                    child: Text('S',
+                        style: TextStyle(
+                            color: SimulColors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Text('SIMUL',
+                    style: TextStyle(
+                      color: SimulColors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1,
+                    )),
+              ]),
+            ),
+
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20),
+              child: Divider(color: SimulColors.border, height: 1),
+            ),
+            const SizedBox(height: 8),
+
+            _DrawerTile(
+              icon : Icons.link_rounded,
+              label: 'Invite to Room',
+              onTap: () { Navigator.pop(context); onInvite(); },
+            ),
+            _DrawerTile(
+              icon : Icons.bar_chart_rounded,
+              label: 'Activity Log',
+              onTap: () { Navigator.pop(context); onActivity(); },
+            ),
+            _DrawerTile(
+              icon : showReactions
+                  ? Icons.emoji_emotions_outlined
+                  : Icons.emoji_emotions_rounded,
+              label: showReactions ? 'Hide Reactions' : 'Show Reactions',
+              onTap: () { Navigator.pop(context); onToggleReactions(); },
+            ),
+
+            const SizedBox(height: 8),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20),
+              child: Divider(color: SimulColors.border, height: 1),
+            ),
+            const SizedBox(height: 8),
+
+            _DrawerTile(
+              icon : Icons.person_outline_rounded,
+              label: 'About',
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const AboutScreen()));
+              },
+            ),
+
+            const Spacer(),
+
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: Text('SIMUL v1.1.0',
+                  style: TextStyle(color: SimulColors.subtle, fontSize: 11)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DrawerTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _DrawerTile({required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        child: Row(children: [
+          Icon(icon, color: SimulColors.faint, size: 18),
+          const SizedBox(width: 14),
+          Text(label,
+              style: const TextStyle(
+                color: SimulColors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              )),
+        ]),
+      ),
+    );
+  }
+}
