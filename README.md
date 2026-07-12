@@ -235,6 +235,6 @@ Distributed under the terms of the MIT Open Source License. Review `LICENSE` doc
 
 **Arsalan Kaleem**
 
-- GitHub: [@ArsalanKaleemand](https://github.com/ArsalanKaleemand)
+- GitHub: [@ArsalanKaleem](https://github.com/ArsalanKaleem)
 - Portfolio: [arsalankaleem.github.io/portfolio](https://arsalankaleem.github.io/portfolio)
 - LinkedIn: [in/arsalankaleem](https://linkedin.com/in/arsalankaleem)
