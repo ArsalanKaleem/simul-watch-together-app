@@ -116,12 +116,19 @@ class _Connect4ViewState extends State<_Connect4View> {
                     active: game.currentTurn == 2),
               ]),
               const SizedBox(height: 6),
-              Text(
-                isMyTurn ? 'Your turn!' : 'Waiting…',
-                style: TextStyle(
-                    color: isMyTurn ? SimulColors.success : SimulColors.faint,
-                    fontWeight: FontWeight.w600),
-              ),
+              Builder(builder: (_) {
+                final canJoin = !amPlayer && game.player2Id == null;
+                final label = canJoin
+                    ? 'Tap any column to join as Player 2'
+                    : (amPlayer
+                        ? (isMyTurn ? 'Your turn!' : 'Waiting…')
+                        : 'Spectating');
+                final color = (canJoin || isMyTurn)
+                    ? SimulColors.success
+                    : SimulColors.faint;
+                return Text(label,
+                    style: TextStyle(color: color, fontWeight: FontWeight.w600));
+              }),
             ] else ...[
               Text(
                 game.winner == -1
@@ -180,9 +187,17 @@ class _Connect4ViewState extends State<_Connect4View> {
                             child: AspectRatio(
                               aspectRatio: 1,
                               child: GestureDetector(
-                                onTap: amPlayer && isMyTurn && game.winner == 0
+                                // Anyone who could still take a seat (or is a
+                                // player whose turn it is) can tap. The service
+                                // auto-seats player 2 and enforces turns, so a
+                                // second person just taps a column to start
+                                // playing — no separate "join" step required.
+                                onTap: game.winner == 0 &&
+                                        ((amPlayer && isMyTurn) ||
+                                            (!amPlayer &&
+                                                game.player2Id == null))
                                     ? () => game.dropPiece(
-                                        widget.roomId, myId, col)
+                                        widget.roomId, myId, myName, col)
                                     : null,
                                 child: Container(
                                   decoration: BoxDecoration(

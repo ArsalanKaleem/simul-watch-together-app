@@ -1,11 +1,18 @@
 // lib/services/livekit_service.dart
 //
-// SIMUL LiveKit Service — replaces WebRTCService + ScreenShareService +
-// the old mediasoup SfuService entirely. No custom SDP, no RTP parsing,
-// no Socket.IO signalling — the LiveKit SDK handles all of it.
+// SIMUL LiveKit Service.
 //
-// Firebase (auth, Firestore, room metadata) and YouTubeSyncService are
-// completely untouched by this file.
+// Fixes in this version:
+//  • Screen-share AUDIO is now captured & published (captureScreenAudio: true),
+//    so tab/desktop audio reaches the room.
+//  • Remote audio (mic AND screen-share) is un-blocked on web via startAudio()
+//    — browsers refuse to autoplay audio until a user gesture, which is why
+//    "the microphone sound doesn't come". We call it after connect, on mic
+//    toggle, and expose enableAudioPlayback() for a manual "Enable sound"
+//    button (see isAudioBlocked).
+//  • The viewer can locally mute the incoming screen-share audio from their own
+//    window (toggleRemoteScreenAudioMute) without affecting anyone else — this
+//    is subscriber-side control, done by disabling the received MediaStreamTrack.
 
 import 'dart:async';
 import 'dart:convert';
@@ -35,9 +42,14 @@ class LiveKitService extends ChangeNotifier {
   bool _micMuted = false;
   bool _sharing  = false;
 
+  /// True when the browser is blocking audio playback (autoplay policy) and a
+  /// user gesture is required. UI can show an "Enable sound" button.
+  bool _audioBlocked = false;
+
   final Map<String, RemoteParticipant> _remoteParticipants = {};
   VideoTrack? _remoteScreenTrack;
   AudioTrack? _remoteScreenAudio;
+  bool _remoteScreenAudioMuted = false; // local (per-viewer) mute
   final Set<String> _speakingParticipants = {};
 
   // ── Getters ────────────────────────────────────────────────────────────
@@ -45,6 +57,7 @@ class LiveKitService extends ChangeNotifier {
   bool get isSharing    => _sharing;
   bool get isMicOn      => _micOn;
   bool get isMicMuted   => _micMuted;
+  bool get isAudioBlocked => _audioBlocked;
   String? get lastError => _lastError;
   SimulRole get role    => _role;
   Room? get room        => _room;
@@ -53,7 +66,9 @@ class LiveKitService extends ChangeNotifier {
       List.unmodifiable(_remoteParticipants.values);
   VideoTrack? get remoteScreenTrack => _remoteScreenTrack;
   AudioTrack? get remoteScreenAudio => _remoteScreenAudio;
-  bool get hasRemoteShare => _remoteScreenTrack != null;
+  bool get hasRemoteShare      => _remoteScreenTrack != null;
+  bool get hasRemoteScreenAudio => _remoteScreenAudio != null;
+  bool get isRemoteScreenAudioMuted => _remoteScreenAudioMuted;
   Set<String> get speakingParticipants =>
       Set.unmodifiable(_speakingParticipants);
 
@@ -86,14 +101,14 @@ class LiveKitService extends ChangeNotifier {
         roomId     : roomId,
         userId     : userId,
         displayName: displayName,
-        canPublish : true, // everyone can publish mic; screen share is gated by role in UI
+        canPublish : true,
       );
 
       _room = Room(
-        roomOptions: RoomOptions(
+        roomOptions: const RoomOptions(
           adaptiveStream: true,
           dynacast      : true,
-          defaultVideoPublishOptions: const VideoPublishOptions(
+          defaultVideoPublishOptions: VideoPublishOptions(
             simulcast: true,
             videoEncoding: VideoEncoding(
               maxBitrate  : 2500000,
@@ -111,6 +126,11 @@ class LiveKitService extends ChangeNotifier {
       _connected = true;
       notifyListeners();
       debugPrint('[LiveKit] connected to room $roomId as ${role.name}');
+
+      // Try to unblock audio right away (join is usually a user gesture).
+      // If the browser still blocks it, isAudioBlocked flips to true and the
+      // UI can offer an "Enable sound" button.
+      await enableAudioPlayback();
     } catch (e) {
       _lastError = e.toString();
       _connected = false;
@@ -154,6 +174,26 @@ class LiveKitService extends ChangeNotifier {
     return token;
   }
 
+  // ── Web audio autoplay unblock ─────────────────────────────────────────
+  //
+  // On web, remote audio (other people's mic + shared tab audio) will not play
+  // until the user interacts with the page. room.startAudio() resumes it and
+  // MUST be triggered from a click/tap. We call it optimistically and also
+  // whenever the user taps mic — but expose it publicly so the UI can wire an
+  // "Enable sound" button when isAudioBlocked is true.
+  Future<void> enableAudioPlayback() async {
+    final room = _room;
+    if (room == null) return;
+    try {
+      await room.startAudio();
+      _audioBlocked = false;
+    } catch (e) {
+      debugPrint('[LiveKit] startAudio blocked (needs user gesture): $e');
+      _audioBlocked = true;
+    }
+    notifyListeners();
+  }
+
   // ── Event listeners ────────────────────────────────────────────────────
 
   void _attachListeners() {
@@ -188,7 +228,12 @@ class LiveKitService extends ChangeNotifier {
         if (e.publication.source == TrackSource.screenShareAudio &&
             e.track is AudioTrack) {
           _remoteScreenAudio = e.track as AudioTrack;
+          // Re-apply the viewer's local mute preference to the fresh track.
+          _applyRemoteScreenAudioMute();
         }
+        // A new audio track arrived — make sure the browser is actually
+        // playing it (no-op on native platforms).
+        enableAudioPlayback();
         notifyListeners();
       })
       ..on<TrackUnsubscribedEvent>((e) {
@@ -220,6 +265,8 @@ class LiveKitService extends ChangeNotifier {
       await _room!.localParticipant!.setMicrophoneEnabled(true);
       _micOn = true;
       _micMuted = false;
+      // Tapping mic is a user gesture → also unblock hearing others.
+      await enableAudioPlayback();
       notifyListeners();
     } catch (e) {
       debugPrint('[LiveKit] startMic error: $e');
@@ -246,10 +293,11 @@ class LiveKitService extends ChangeNotifier {
     if (_room?.localParticipant == null) return;
     await _room!.localParticipant!.setMicrophoneEnabled(true);
     _micMuted = false;
+    await enableAudioPlayback();
     notifyListeners();
   }
 
-  /// Convenience: mic isn't started yet → start it. Started → toggle mute.
+  /// mic not started → start it. Started → toggle mute.
   Future<void> toggleMic() async {
     if (!_micOn) {
       await startMic();
@@ -260,12 +308,50 @@ class LiveKitService extends ChangeNotifier {
     }
   }
 
+  // ── Remote screen-share audio: per-viewer local mute ──────────────────
+  //
+  // Gives the person being shared with authority over the shared audio in
+  // THEIR OWN window. Disabling the received MediaStreamTrack silences it
+  // locally only; it does not stop the sender or affect other viewers.
+  //
+  // NOTE: the LiveKit Flutter SDK doesn't expose per-track *gain* (a 0–100 %
+  // slider) the way the JS SDK does, so this is an on/off local mute — which
+  // is the supported subscriber-side control. See GUIDE.md for a fuller
+  // volume-slider option on web.
+  void _applyRemoteScreenAudioMute() {
+    final t = _remoteScreenAudio;
+    if (t == null) return;
+    try {
+      t.mediaStreamTrack.enabled = !_remoteScreenAudioMuted;
+    } catch (e) {
+      debugPrint('[LiveKit] could not apply screen-audio mute: $e');
+    }
+  }
+
+  void setRemoteScreenAudioMuted(bool muted) {
+    _remoteScreenAudioMuted = muted;
+    _applyRemoteScreenAudioMute();
+    notifyListeners();
+  }
+
+  void toggleRemoteScreenAudioMute() =>
+      setRemoteScreenAudioMuted(!_remoteScreenAudioMuted);
+
   // ── Screen / tab share ────────────────────────────────────────────────
 
   Future<bool> startScreenShare() async {
     if (_room?.localParticipant == null) return false;
     try {
-      await _room!.localParticipant!.setScreenShareEnabled(true);
+      // captureScreenAudio: true → publishes the tab/desktop audio alongside
+      // the video (works on web + desktop; ignored where unsupported).
+      await _room!.localParticipant!.setScreenShareEnabled(
+        true,
+        captureScreenAudio: true,
+        screenShareCaptureOptions: const ScreenShareCaptureOptions(
+          captureScreenAudio: true,
+          maxFrameRate: 30.0,
+        ),
+      );
       _sharing = true;
       notifyListeners();
       return true;
@@ -308,8 +394,10 @@ class LiveKitService extends ChangeNotifier {
     _sharing = false;
     _micOn = false;
     _micMuted = false;
+    _audioBlocked = false;
     _remoteScreenTrack = null;
     _remoteScreenAudio = null;
+    _remoteScreenAudioMuted = false;
     _remoteParticipants.clear();
     _speakingParticipants.clear();
     notifyListeners();

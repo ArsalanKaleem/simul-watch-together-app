@@ -1,45 +1,43 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
-.DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
-
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
+# ─── Flutter / Dart ───────────────────────────────────────────
 .dart_tool/
+.flutter-plugins
 .flutter-plugins-dependencies
+.packages
 .pub-cache/
 .pub/
-/build/
-/coverage/
+build/
+*.iml
+*.log
+.idea/
+.vscode/
+doc/api/
 
-# Symbolication related
-app.*.symbols
+# ─── Platform build junk ──────────────────────────────────────
+android/.gradle/
+android/app/debug/
+android/app/profile/
+android/app/release/
+ios/Pods/
+ios/.symlinks/
+macos/Pods/
+**/Flutter/ephemeral/
+**/Generated.xcconfig
 
-# Obfuscation related
-app.*.map.json
+# ─── Secrets — DO NOT COMMIT ──────────────────────────────────
+# Real LiveKit API key/secret live only in the token server env:
+token-server/.env
+.env
+*.env.local
+# Firebase service-account credentials (server-side keys) — never commit:
+**/serviceAccount*.json
+**/google-services.json
+**/GoogleService-Info.plist
 
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
+# NOTE: lib/firebase_options.dart is intentionally committed — this project
+# uses a single shared Firebase backend (the maintainer's). Client Firebase
+# keys are safe to expose ONLY while Firestore rules + App Check are locked
+# down. Do not commit any server-side service-account JSON, though.
+
+# ─── Node (token server) ──────────────────────────────────────
+node_modules/
+npm-debug.log*

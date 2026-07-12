@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../utils/constants.dart';
 import '../services/firebase_service.dart';
 import '../services/livekit_service.dart';
+import '../services/theme_controller.dart';
 import '../services/youtube_sync_service.dart';
 import '../widgets/videoPlayerWidget.dart';
 import '../widgets/live_share_viewer.dart';
@@ -325,6 +326,16 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
           _RoomCodeChip(roomId: widget.roomId),
         ]),
         actions: [
+          // Shown when the browser is blocking audio autoplay — one tap wires
+          // up hearing everyone (mic + shared tab audio).
+          if (lk.isAudioBlocked)
+            IconButton(
+              icon: const Icon(Icons.volume_up_rounded,
+                  color: SimulColors.info, size: 20),
+              tooltip: 'Enable sound',
+              onPressed: () => lk.enableAudioPlayback(),
+            ),
+
           // Screen share toggle (desktop/web only)
           if (AppConfig.isScreenShareSupported)
             IconButton(
@@ -1517,6 +1528,20 @@ class _AppDrawer extends StatelessWidget {
                     MaterialPageRoute(builder: (_) => const AboutScreen()));
               },
             ),
+
+            Builder(builder: (context) {
+              final isDark =
+                  Theme.of(context).brightness == Brightness.dark;
+              return _DrawerTile(
+                icon: isDark
+                    ? Icons.light_mode_rounded
+                    : Icons.dark_mode_rounded,
+                label: isDark ? 'Light Mode' : 'Dark Mode',
+                onTap: () => context
+                    .read<ThemeController>()
+                    .toggle(MediaQuery.platformBrightnessOf(context)),
+              );
+            }),
 
             const Spacer(),
 
