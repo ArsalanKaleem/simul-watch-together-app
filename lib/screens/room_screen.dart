@@ -175,6 +175,84 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
     await context.read<LiveKitService>().toggleMic();
   }
 
+  // Builds the AppBar's action icons, adapting to available width so they
+  // never overflow. On narrow phones, the screen-share toggle is dropped from
+  // here (it's still reachable from the drawer) and the participant chip
+  // shrinks to an icon-only tap target — this alone was enough width to
+  // reliably overflow a 360–390px-wide phone AppBar before.
+  List<Widget> _buildAppBarActions(
+      BuildContext context, LiveKitService lk, int participantCount) {
+    final width = MediaQuery.of(context).size.width;
+    final narrow = width < 600;
+
+    return [
+      // Shown when the browser is blocking audio autoplay — one tap wires
+      // up hearing everyone (mic + shared tab audio). Rare/contextual, so it
+      // always gets a spot even on narrow screens.
+      if (lk.isAudioBlocked)
+        IconButton(
+          icon: const Icon(Icons.volume_up_rounded,
+              color: SimulColors.info, size: 20),
+          tooltip: 'Enable sound',
+          onPressed: () => lk.enableAudioPlayback(),
+        ),
+
+      // Screen share toggle — only in the AppBar on wide screens. On narrow
+      // screens it lives in the drawer instead, to keep the bar from
+      // overflowing.
+      if (AppConfig.isScreenShareSupported && !narrow)
+        IconButton(
+          icon: Icon(
+            lk.isSharing
+                ? Icons.stop_screen_share_rounded
+                : Icons.screen_share_rounded,
+            color: lk.isSharing ? SimulColors.shareActive : SimulColors.faint,
+            size: 20,
+          ),
+          tooltip: lk.isSharing ? 'Stop sharing' : 'Share screen / tab',
+          onPressed: _toggleScreenShare,
+        ),
+
+      // Voice chat — always present, it's the core control.
+      IconButton(
+        icon: Icon(
+          lk.isMicOn && !lk.isMicMuted ? Icons.mic_rounded : Icons.mic_off_rounded,
+          color: lk.isMicOn && !lk.isMicMuted ? SimulColors.success : SimulColors.faint,
+          size: 20,
+        ),
+        onPressed: _toggleVoice,
+      ),
+
+      // Participant count — icon-only on narrow screens to save width; full
+      // chip with the count on wider screens.
+      GestureDetector(
+        onTap: _showParticipants,
+        child: Container(
+          margin: const EdgeInsets.only(right: 4),
+          padding: EdgeInsets.symmetric(
+              horizontal: narrow ? 6 : 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: SimulColors.surface,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: SimulColors.border),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.people_outline, color: SimulColors.faint, size: 14),
+            if (!narrow) ...[
+              const SizedBox(width: 4),
+              Text('$participantCount',
+                  style: const TextStyle(color: SimulColors.faint, fontSize: 12)),
+            ],
+          ]),
+        ),
+      ),
+      IconButton(
+        icon: const Icon(Icons.menu_rounded, color: SimulColors.faint),
+        onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+      ),
+    ];
+  }
+
   // ── Invite / participants / activity ────────────────────────────────────────
 
   void _showInvite() {
@@ -297,6 +375,8 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
         onActivity        : _showActivity,
         onToggleReactions : () => setState(() => _showReactions = !_showReactions),
         showReactions     : _showReactions,
+        isSharing         : lk.isSharing,
+        onToggleScreenShare: _toggleScreenShare,
       ),
       appBar: AppBar(
         backgroundColor: SimulColors.black,
@@ -313,78 +393,40 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
             }
           },
         ),
-        title: Column(
+        // titleSpacing: 0 so the title gets the max width available before
+        // squeezing into the action icons on narrow phones.
+        titleSpacing: 0,
+        title: Builder(builder: (context) {
+          // Below this width, the participant "Live/Waiting" pill is dropped
+          // from the title row — it's decorative, and the room code chip
+          // (which people actually need to read/tap) gets priority.
+          final narrow = MediaQuery.of(context).size.width < 380;
+          return Column(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            const Text('SIMUL', style: TextStyle(
-                color: SimulColors.white, fontSize: 16,
-                fontWeight: FontWeight.w700, letterSpacing: 1)),
-            const SizedBox(width: 8),
-            _StatusPill(active: participantCount >= 2),
-          ]),
-          _RoomCodeChip(roomId: widget.roomId),
-        ]),
-        actions: [
-          // Shown when the browser is blocking audio autoplay — one tap wires
-          // up hearing everyone (mic + shared tab audio).
-          if (lk.isAudioBlocked)
-            IconButton(
-              icon: const Icon(Icons.volume_up_rounded,
-                  color: SimulColors.info, size: 20),
-              tooltip: 'Enable sound',
-              onPressed: () => lk.enableAudioPlayback(),
-            ),
-
-          // Screen share toggle (desktop/web only)
-          if (AppConfig.isScreenShareSupported)
-            IconButton(
-              icon: Icon(
-                lk.isSharing
-                    ? Icons.stop_screen_share_rounded
-                    : Icons.screen_share_rounded,
-                color: lk.isSharing ? SimulColors.shareActive : SimulColors.faint,
-                size: 20,
-              ),
-              tooltip: lk.isSharing ? 'Stop sharing' : 'Share screen / tab',
-              onPressed: _toggleScreenShare,
-            ),
-
-          // Voice chat
-          IconButton(
-            icon: Icon(
-              lk.isMicOn && !lk.isMicMuted ? Icons.mic_rounded : Icons.mic_off_rounded,
-              color: lk.isMicOn && !lk.isMicMuted ? SimulColors.success : SimulColors.faint,
-              size: 20,
-            ),
-            onPressed: _toggleVoice,
-          ),
-
-          // Participant count
-          GestureDetector(
-            onTap: _showParticipants,
-            child: Container(
-              margin: const EdgeInsets.only(right: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: SimulColors.surface,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: SimulColors.border),
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                const Icon(Icons.people_outline, color: SimulColors.faint, size: 14),
-                const SizedBox(width: 4),
-                Text('$participantCount',
-                    style: const TextStyle(color: SimulColors.faint, fontSize: 12)),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                const Flexible(
+                  child: Text('SIMUL',
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      style: TextStyle(
+                          color: SimulColors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1)),
+                ),
+                if (!narrow) ...[
+                  const SizedBox(width: 8),
+                  _StatusPill(active: participantCount >= 2),
+                ],
               ]),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.menu_rounded, color: SimulColors.faint),
-            onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
-          ),
-        ],
+              _RoomCodeChip(roomId: widget.roomId),
+            ],
+          );
+        }),
+        actions: _buildAppBarActions(context, lk, participantCount),
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
@@ -1443,19 +1485,29 @@ class _AppDrawer extends StatelessWidget {
   final VoidCallback onActivity;
   final VoidCallback onToggleReactions;
   final bool showReactions;
+  final bool isSharing;
+  final VoidCallback onToggleScreenShare;
 
   const _AppDrawer({
     required this.onInvite,
     required this.onActivity,
     required this.onToggleReactions,
     required this.showReactions,
+    required this.isSharing,
+    required this.onToggleScreenShare,
   });
 
   @override
   Widget build(BuildContext context) {
+    // A fixed 280px drawer can exceed the viewport on very narrow phones
+    // (some are ~320px wide), leaving no visible "scrim" and looking like a
+    // full takeover. Cap it relative to screen width instead.
+    final screenWidth = MediaQuery.of(context).size.width;
+    final drawerWidth = screenWidth < 320 ? screenWidth * 0.9 : 280.0;
+
     return Drawer(
       backgroundColor: SimulColors.surface,
-      width: 280,
+      width: drawerWidth,
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1479,13 +1531,17 @@ class _AppDrawer extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                const Text('SIMUL',
-                    style: TextStyle(
-                      color: SimulColors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1,
-                    )),
+                const Flexible(
+                  child: Text('SIMUL',
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: SimulColors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1,
+                      )),
+                ),
               ]),
             ),
 
@@ -1512,6 +1568,17 @@ class _AppDrawer extends StatelessWidget {
               label: showReactions ? 'Hide Reactions' : 'Show Reactions',
               onTap: () { Navigator.pop(context); onToggleReactions(); },
             ),
+            // Screen share also lives here so it's always reachable even on
+            // narrow phones, where it's dropped from the AppBar to avoid
+            // overflow.
+            if (AppConfig.isScreenShareSupported)
+              _DrawerTile(
+                icon : isSharing
+                    ? Icons.stop_screen_share_rounded
+                    : Icons.screen_share_rounded,
+                label: isSharing ? 'Stop Sharing' : 'Share Screen / Tab',
+                onTap: () { Navigator.pop(context); onToggleScreenShare(); },
+              ),
 
             const SizedBox(height: 8),
             const Padding(
