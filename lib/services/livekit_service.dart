@@ -182,12 +182,7 @@ class LiveKitService extends ChangeNotifier {
       'canPublish': canPublish.toString(),
     });
 
-    final response = await http.get(uri).timeout(
-      const Duration(seconds: 10),
-      onTimeout: () => throw Exception(
-        'Token server did not respond within 10s. Is it running at $tokenEndpoint ?',
-      ),
-    );
+    final response = await _getWithFriendlyError(uri, tokenEndpoint);
 
     if (response.statusCode != 200) {
       throw Exception('Token server returned ${response.statusCode}: ${response.body}');
@@ -201,6 +196,29 @@ class LiveKitService extends ChangeNotifier {
     }
 
     return token;
+  }
+
+  // http.get() throws a raw ClientException ("Failed to fetch, uri=...")
+  // when nothing is listening at the token endpoint — accurate, but not
+  // helpful to read in a UI error toast. Convert it into a message that
+  // actually tells the person what to do next.
+  Future<http.Response> _getWithFriendlyError(Uri uri, String tokenEndpoint) async {
+    try {
+      return await http.get(uri).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw Exception(
+          'Token server did not respond within 10s. Is it running at $tokenEndpoint ?',
+        ),
+      );
+    } catch (e) {
+      if (e is Exception && e.toString().contains('did not respond')) rethrow;
+      throw Exception(
+        'Could not reach the token server at $tokenEndpoint. '
+            'If you haven\'t set up LiveKit yet, open Settings and add your '
+            'LiveKit URL and API key/secret (or start a local token server if '
+            'using the advanced/dev setup).',
+      );
+    }
   }
 
   // ── Web audio autoplay unblock ─────────────────────────────────────────

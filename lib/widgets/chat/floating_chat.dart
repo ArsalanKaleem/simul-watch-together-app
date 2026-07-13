@@ -93,40 +93,32 @@ class _FloatingChatState extends State<FloatingChat>
     final panelWidth = (screen.width - 32).clamp(240.0, 320.0);
     final panelHeight = (screen.height - 180 - keyboard).clamp(280.0, 440.0);
 
-    return Stack(
-      children: [
-        // Chat panel
-        if (_open)
-          Positioned(
-            bottom: 80 + keyboard,
-            right: 16,
-            child: ScaleTransition(
-              scale: _scale,
-              alignment: Alignment.bottomRight,
-              child: _ChatPanel(
-                roomId: widget.roomId,
-                userName: widget.userName,
-                scrollCtrl: _scrollCtrl,
-                msgCtrl: _msgCtrl,
-                replyTo: _replyTo,
-                onSend: _sendMessage,
-                onTyping: _onTyping,
-                onClearReply: () => setState(() => _replyTo = null),
-                onReply: (msg) => setState(() => _replyTo = msg),
-                width: panelWidth,
-                height: panelHeight,
-                onNewMessage: (count) {
-                  if (!_open) setState(() => _unread += count - _lastSeenCount);
-                  _lastSeenCount = count;
-                },
-              ),
-            ),
-          ),
-
-        // FAB
-        Positioned(
-          bottom: 16, right: 16,
-          child: GestureDetector(
+    // IMPORTANT: this whole widget is passed to Scaffold as
+    // `floatingActionButton`. Scaffold measures the FAB's own layout size to
+    // position both the FAB itself and any floating SnackBar. A raw `Stack`
+    // with only `Positioned` children (as this used to be) has an ambiguous,
+    // sometimes very large reported size once the chat panel's Positioned
+    // child is in the mix — which corrupts Scaffold's SnackBar geometry math
+    // and throws "A floating SnackBar presented off screen", cascading into
+    // render/hit-test assertions that can make the whole page stop
+    // responding to clicks.
+    //
+    // Fix: pin the FAB's reported layout size to the actual 56×56 button via
+    // SizedBox, and let the chat panel render OUTSIDE that box purely via
+    // paint (clipBehavior: Clip.none) — it stays fully visible and
+    // interactive, but no longer affects what Scaffold thinks the FAB's size
+    // is.
+    return SizedBox(
+      width: 56,
+      height: 56,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // FAB — fills the SizedBox exactly (this box IS the button's size,
+          // already placed at the screen's bottom-right by Scaffold's
+          // `floatingActionButtonLocation: endFloat`), so no Positioned offset
+          // needed here anymore.
+          GestureDetector(
             onTap: _toggleChat,
             child: Container(
               width: 56, height: 56,
@@ -160,8 +152,40 @@ class _FloatingChatState extends State<FloatingChat>
               ),
             ),
           ),
-        ),
-      ],
+
+          // Chat panel — anchored to the same box's top-right corner (right: 0
+          // matches the button's right edge; bottom: 64 clears the 56px button
+          // plus an 8px gap). clipBehavior: Clip.none on the Stack above lets
+          // this paint outside the tiny 56×56 box without being clipped, and
+          // without changing what Scaffold thinks the FAB's size is.
+          if (_open)
+            Positioned(
+              bottom: 64 + keyboard,
+              right: 0,
+              child: ScaleTransition(
+                scale: _scale,
+                alignment: Alignment.bottomRight,
+                child: _ChatPanel(
+                  roomId: widget.roomId,
+                  userName: widget.userName,
+                  scrollCtrl: _scrollCtrl,
+                  msgCtrl: _msgCtrl,
+                  replyTo: _replyTo,
+                  onSend: _sendMessage,
+                  onTyping: _onTyping,
+                  onClearReply: () => setState(() => _replyTo = null),
+                  onReply: (msg) => setState(() => _replyTo = msg),
+                  width: panelWidth,
+                  height: panelHeight,
+                  onNewMessage: (count) {
+                    if (!_open) setState(() => _unread += count - _lastSeenCount);
+                    _lastSeenCount = count;
+                  },
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

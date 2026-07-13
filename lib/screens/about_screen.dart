@@ -15,7 +15,7 @@ class AboutScreen extends StatelessWidget {
   static const String _name    = 'Arsalan Kaleem';
   static const String _field   = 'Computer Science';
   static const String _school  = 'The Shaikh Ayaz University';
-  static const String _photo   = 'lib/assets/portfo-img.jpg';
+  static const String _photo   = 'lib/assets/me.png';
   static const String _bio =
       'A short bio about yourself goes here. Tell people who you are, what '
       'you do, and what drives you.';
