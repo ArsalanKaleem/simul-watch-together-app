@@ -60,9 +60,9 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
 
   static bool get _flutterWebViewSupported =>
       kIsWeb ||
-          defaultTargetPlatform == TargetPlatform.android ||
-          defaultTargetPlatform == TargetPlatform.iOS ||
-          defaultTargetPlatform == TargetPlatform.macOS;
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS ||
+      defaultTargetPlatform == TargetPlatform.macOS;
 
   static bool get _isWindows =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
@@ -88,7 +88,7 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setUserAgent(
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-              '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')
+          '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')
       ..addJavaScriptChannel('FlutterBridge',
           onMessageReceived: (m) => _handleMessage(m.message))
       ..loadHtmlString(_buildHtml(widget.videoId, windows: false));
@@ -301,7 +301,7 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
         text: 'https://www.youtube.com/watch?v=${widget.videoId}'));
     setState(() => _copied = true);
     Future.delayed(const Duration(seconds: 2),
-            () => mounted ? setState(() => _copied = false) : null);
+        () => mounted ? setState(() => _copied = false) : null);
   }
 
   @override
@@ -347,12 +347,12 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
         child: ready
             ? win.Webview(_winCtrl!)
             : Container(
-          color: SimulColors.black,
-          child: const Center(
-            child: CircularProgressIndicator(
-                strokeWidth: 2, color: SimulColors.white),
-          ),
-        ),
+                color: SimulColors.black,
+                child: const Center(
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: SimulColors.white),
+                ),
+              ),
       );
     }
     return _DesktopFallbackPlayer(
@@ -398,7 +398,7 @@ class _DesktopFallbackPlayer extends StatelessWidget {
                     padding: EdgeInsets.symmetric(horizontal: 28),
                     child: Text(
                       'Inline playback unavailable here. Copy the link to '
-                          'watch in your browser.',
+                      'watch in your browser.',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: SimulColors.faint, fontSize: 12),
                     ),

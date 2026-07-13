@@ -205,7 +205,7 @@ class FirebaseService extends ChangeNotifier {
 
       if (_currentUser != null && _participantIds.length >= 2) {
         final pid = _participantIds.firstWhere(
-            (id) => id != uid, orElse: () => '');
+                (id) => id != uid, orElse: () => '');
         if (pid.isNotEmpty) _loadPartner(pid);
       } else {
         _partner = null;
@@ -302,10 +302,18 @@ class FirebaseService extends ChangeNotifier {
       int downvotes   = data['downvotes'] ?? 0;
       if (upvotedBy.contains(userId)) {
         upvotedBy.remove(userId);
-        if (up) upvotes--; else downvotes--;
+        if (up) {
+          upvotes--;
+        } else {
+          downvotes--;
+        }
       } else {
         upvotedBy.add(userId);
-        if (up) upvotes++; else downvotes++;
+        if (up) {
+          upvotes++;
+        } else {
+          downvotes++;
+        }
       }
       tx.update(ref, {'upvotes': upvotes, 'downvotes': downvotes, 'upvotedBy': upvotedBy});
     });
@@ -452,8 +460,8 @@ class FirebaseService extends ChangeNotifier {
     return _db.collection('rooms').doc(roomId).collection('typing')
         .snapshots()
         .map((s) => s.docs
-            .where((d) => d.data()['isTyping'] == true && d.id != (_currentUser?.id ?? ''))
-            .map((d) => d.data()['name'] as String)
-            .toList());
+        .where((d) => d.data()['isTyping'] == true && d.id != (_currentUser?.id ?? ''))
+        .map((d) => d.data()['name'] as String)
+        .toList());
   }
 }

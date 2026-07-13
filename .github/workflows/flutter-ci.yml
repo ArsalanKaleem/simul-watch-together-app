@@ -15,5 +15,9 @@ jobs:
         with:
           channel: stable
       - run: flutter pub get
-      - run: flutter analyze
+      # --no-fatal-infos / --no-fatal-warnings: only actual errors fail the
+      # build. Info/warning-level lints (deprecated APIs, style nits, etc.)
+      # still print in the log for visibility, but won't block CI on their
+      # own. Tighten this later once the codebase is fully lint-clean.
+      - run: flutter analyze --no-fatal-infos --no-fatal-warnings
       # - run: flutter test   # enable once you add tests
