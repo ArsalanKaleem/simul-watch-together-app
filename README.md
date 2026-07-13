@@ -52,26 +52,32 @@ It's fully cross-platform from a single Flutter codebase, uses **Firebase** for 
 
 ## 📸 Screenshots
 
+<div align="center">
 
-<p align="center">
-  <img src="docs/screenshots/auth-screen.png" width="220"/>
-  <img src="docs/screenshots/room-screen.png" width="220"/>
-  <img src="docs/screenshots/room-share.png" width="220"/>
-</p>
+<table>
+<tr>
+<td align="center">
+<img src="docs/screenshots/auth-screen.png" width="260"/><br/>
+<b>Authentication</b>
+</td>
+<td align="center">
+<img src="docs/screenshots/room-screen.png" width="260"/><br/>
+<b>Room</b>
+</td>
+<td align="center">
+<img src="docs/screenshots/room-share.png" width="260"/><br/>
+<b>Screen Share</b>
+</td>
+</tr>
+<tr>
+<td align="center">
+<img src="docs/screenshots/room-code.png" width="260"/><br/>
+<b>Room Code</b>
+</td>
+</tr>
+</table>
 
-<p align="center">
-  <b>Authentication</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <b>Room</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <b>Screen Share</b>
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/room-code.png" width="220"/>
-</p>
-
-<p align="center">
-  <b>Room Code</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</p>
+</div>
 
 ---
 
