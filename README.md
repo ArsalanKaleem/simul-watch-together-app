@@ -52,13 +52,36 @@ It's fully cross-platform from a single Flutter codebase, uses **Firebase** for 
 
 ## 📸 Screenshots
 
+## 📸 Screenshots
+
 <div align="center">
 
-| Auth | Room | Screen Share |
-|:---:|:---:|:---:|
-| <img src="docs/screenshots/auth-screen.png" width="260" alt="Auth screen"/> | <img src="docs/screenshots/room-screen.png" width="260" alt="Room screen"/> | <img src="docs/screenshots/room-share.png" width="260" alt="Screen share"/> |
-| **Connect 4** | **Room Code** | **Banner** |
-| <img src="docs/screenshots/connect4.png" width="260" alt="Connect 4"/> | <img src="docs/screenshots/room-code.png" width="260" alt="Room code"/> | <img src="docs/screenshots/banner.png" width="260" alt="Banner"/> |
+<table>
+<tr>
+<td align="center">
+<img src="docs/screenshots/auth-screen.png" width="260"/><br/>
+<b>Authentication</b>
+</td>
+<td align="center">
+<img src="docs/screenshots/room-screen.png" width="260"/><br/>
+<b>Room</b>
+</td>
+<td align="center">
+<img src="docs/screenshots/room-share.png" width="260"/><br/>
+<b>Screen Share</b>
+</td>
+</tr>
+<tr>
+<td align="center">
+<img src="docs/screenshots/connect4.png" width="220"/><br/>
+<b>Connect 4</b>
+</td>
+<td align="center">
+<img src="docs/screenshots/room-code.png" width="260"/><br/>
+<b>Room Code</b>
+</td>
+</tr>
+</table>
 
 </div>
 
