@@ -7,7 +7,7 @@ import '../services/firebase_service.dart';
 import '../services/livekit_service.dart';
 import '../services/theme_controller.dart';
 import '../services/youtube_sync_service.dart';
-import '../widgets/videoPlayerWidget.dart';
+import '../widgets/video_player_widget.dart';
 import '../widgets/live_share_viewer.dart';
 import '../widgets/chat/floating_chat.dart';
 import '../widgets/reactions/live_reactions.dart';
@@ -34,7 +34,6 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
 
   // Video state
   String? _currentVideoId;
-  String  _currentVideoTitle = '';
   String  _myUserId          = '';
 
   // View mode: 'youtube' | 'screenshare'
@@ -81,7 +80,6 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
           case 'load':
             setState(() {
               _currentVideoId    = state['videoId'] as String?;
-              _currentVideoTitle = state['title']   as String? ?? '';
               _viewMode          = 'youtube';
             });
           case 'play':
@@ -121,7 +119,6 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
   void _loadVideo(String videoId, String title) {
     setState(() {
       _currentVideoId    = videoId;
-      _currentVideoTitle = title;
       _viewMode          = 'youtube';
     });
     context.read<YouTubeSyncService>().sendVideoLoaded(
@@ -384,12 +381,18 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded, color: SimulColors.white),
           onPressed: () async {
+            // Capture everything context-derived BEFORE the await, so nothing
+            // below touches `context` across the async gap (fixes the
+            // use_build_context_synchronously lint).
+            final navigator = Navigator.of(context);
+            final lkService = context.read<LiveKitService>();
+            final fbService = context.read<FirebaseService>();
             final leave = await _confirmLeave();
             if (leave && mounted) {
               if (lk.isSharing) await lk.stopScreenShare();
-              await context.read<LiveKitService>().disconnect();
-              await context.read<FirebaseService>().leaveRoom();
-              if (mounted) Navigator.pop(context);
+              await lkService.disconnect();
+              await fbService.leaveRoom();
+              if (mounted) navigator.pop();
             }
           },
         ),
@@ -682,8 +685,11 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
         videoId  : _currentVideoId!,
         onPlayPause: (playing, pos) {
           final sync = context.read<YouTubeSyncService>();
-          if (playing) sync.sendPlayEvent(widget.roomId, _myUserId, pos);
-          else         sync.sendPauseEvent(widget.roomId, _myUserId, pos);
+          if (playing) {
+            sync.sendPlayEvent(widget.roomId, _myUserId, pos);
+          } else {
+            sync.sendPauseEvent(widget.roomId, _myUserId, pos);
+          }
         },
         onSeek: (pos) => context.read<YouTubeSyncService>()
             .sendSeekEvent(widget.roomId, _myUserId, pos),
@@ -1411,13 +1417,17 @@ class _ActivitySheet extends StatelessWidget {
       child: StreamBuilder<List<ActivityLog>>(
         stream: stream,
         builder: (_, snap) {
-          if (!snap.hasData) return const Center(
-              child: CircularProgressIndicator(
-                  strokeWidth: 2, color: SimulColors.white));
+          if (!snap.hasData) {
+            return const Center(
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: SimulColors.white));
+          }
           final logs = snap.data!;
-          if (logs.isEmpty) return const Center(
-              child: Text('No activity yet',
-                  style: TextStyle(color: SimulColors.subtle)));
+          if (logs.isEmpty) {
+            return const Center(
+                child: Text('No activity yet',
+                    style: TextStyle(color: SimulColors.subtle)));
+          }
           return ListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             itemCount: logs.length,
@@ -1452,13 +1462,17 @@ class _ActivityTab extends StatelessWidget {
     return StreamBuilder<List<ActivityLog>>(
       stream: svc.getActivityStream(roomId),
       builder: (_, snap) {
-        if (!snap.hasData) return const Center(
-            child: CircularProgressIndicator(
-                strokeWidth: 2, color: SimulColors.white));
+        if (!snap.hasData) {
+          return const Center(
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: SimulColors.white));
+        }
         final logs = snap.data!;
-        if (logs.isEmpty) return const Center(
-            child: Text('No activity yet',
-                style: TextStyle(color: SimulColors.subtle, fontSize: 13)));
+        if (logs.isEmpty) {
+          return const Center(
+              child: Text('No activity yet',
+                  style: TextStyle(color: SimulColors.subtle, fontSize: 13)));
+        }
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: logs.length,
