@@ -38,12 +38,16 @@ class _VideoQueuePanelState extends State<VideoQueuePanel> {
     final videoId = _extractVideoId(url);
     if (videoId == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Invalid YouTube URL'), backgroundColor: SimulColors.error));
+          content: Text('Invalid YouTube URL'), backgroundColor: SimulColors.error));
       return;
     }
-    await context.read<FirebaseService>().addToQueue(widget.roomId, videoId, title);
+    // Capture before the await so nothing below touches `context` across the
+    // async gap.
+    final firebaseService = context.read<FirebaseService>();
+    final navigator = Navigator.of(context);
+    await firebaseService.addToQueue(widget.roomId, videoId, title);
     _urlCtrl.clear(); _titleCtrl.clear();
-    Navigator.pop(context);
+    if (mounted) navigator.pop();
   }
 
   void _showAdd() {
@@ -123,11 +127,15 @@ class _VideoQueuePanelState extends State<VideoQueuePanel> {
         Expanded(child: StreamBuilder<List<VideoQueueItem>>(
           stream: svc.getQueueStream(widget.roomId),
           builder: (_, snap) {
-            if (!snap.hasData) return const Center(child:
-                CircularProgressIndicator(strokeWidth: 2, color: SimulColors.white));
+            if (!snap.hasData) {
+              return const Center(child:
+              CircularProgressIndicator(strokeWidth: 2, color: SimulColors.white));
+            }
             final items = snap.data!;
-            if (items.isEmpty) return const Center(child: Text('Queue is empty',
-                style: TextStyle(color: SimulColors.subtle, fontSize: 13)));
+            if (items.isEmpty) {
+              return const Center(child: Text('Queue is empty',
+                  style: TextStyle(color: SimulColors.subtle, fontSize: 13)));
+            }
             return ListView.builder(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               itemCount: items.length,
@@ -144,10 +152,10 @@ class _VideoQueuePanelState extends State<VideoQueuePanel> {
                   child: Row(children: [
                     // Thumbnail placeholder
                     Container(width: 44, height: 32,
-                      decoration: BoxDecoration(color: SimulColors.muted,
-                          borderRadius: BorderRadius.circular(6)),
-                      child: const Icon(Icons.play_circle_outline,
-                          color: SimulColors.faint, size: 20)),
+                        decoration: BoxDecoration(color: SimulColors.muted,
+                            borderRadius: BorderRadius.circular(6)),
+                        child: const Icon(Icons.play_circle_outline,
+                            color: SimulColors.faint, size: 20)),
                     const SizedBox(width: 10),
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(item.title, style: const TextStyle(color: SimulColors.white,

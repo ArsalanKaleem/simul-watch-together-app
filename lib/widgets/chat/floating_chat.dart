@@ -148,7 +148,7 @@ class _FloatingChatState extends State<FloatingChat>
                       child: Container(
                         padding: const EdgeInsets.all(2),
                         decoration: const BoxDecoration(
-                          color: SimulColors.error, shape: BoxShape.circle),
+                            color: SimulColors.error, shape: BoxShape.circle),
                         constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
                         child: Text('$_unread',
                             style: const TextStyle(color: Colors.white, fontSize: 9,
@@ -229,16 +229,20 @@ class _ChatPanel extends StatelessWidget {
             child: StreamBuilder<List<Message>>(
               stream: svc.getMessagesStream(roomId),
               builder: (ctx, snap) {
-                if (!snap.hasData) return const Center(
-                    child: CircularProgressIndicator(strokeWidth: 2,
-                        color: SimulColors.white));
+                if (!snap.hasData) {
+                  return const Center(
+                      child: CircularProgressIndicator(strokeWidth: 2,
+                          color: SimulColors.white));
+                }
                 final msgs = snap.data!;
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   onNewMessage(msgs.length);
                 });
-                if (msgs.isEmpty) return const Center(
-                    child: Text('No messages yet', style: TextStyle(
-                        color: SimulColors.subtle, fontSize: 13)));
+                if (msgs.isEmpty) {
+                  return const Center(
+                      child: Text('No messages yet', style: TextStyle(
+                          color: SimulColors.subtle, fontSize: 13)));
+                }
                 return ListView.builder(
                   controller: scrollCtrl,
                   padding: const EdgeInsets.all(12),

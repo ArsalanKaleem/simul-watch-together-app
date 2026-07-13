@@ -7,7 +7,7 @@ import '../services/firebase_service.dart';
 import '../services/livekit_service.dart';
 import '../services/theme_controller.dart';
 import '../services/youtube_sync_service.dart';
-import '../widgets/video_player_widget.dart';
+import '../widgets/videoPlayerWidget.dart';
 import '../widgets/live_share_viewer.dart';
 import '../widgets/chat/floating_chat.dart';
 import '../widgets/reactions/live_reactions.dart';
