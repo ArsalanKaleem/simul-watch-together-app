@@ -20,16 +20,21 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:livekit_client/livekit_client.dart';
 
+import 'app_settings_service.dart';
+import 'livekit_token.dart';
+
 enum SimulRole { host, viewer }
 
 class LiveKitService extends ChangeNotifier {
-  final String liveKitUrl;
-  final String tokenEndpoint;
+  LiveKitService();
 
-  LiveKitService({
-    required this.liveKitUrl,
-    required this.tokenEndpoint,
-  });
+  // Injected (via ProxyProvider) so connect() always reads the latest values
+  // the user saved on the Settings screen.
+  AppSettingsService? _settings;
+  void attachSettings(AppSettingsService s) => _settings = s;
+
+  /// Effective LiveKit websocket URL from user settings (falls back to dev).
+  String get liveKitUrl => _settings?.liveKitUrl ?? '';
 
   // ── State ──────────────────────────────────────────────────────────────
   Room? _room;
@@ -96,6 +101,14 @@ class LiveKitService extends ChangeNotifier {
     _role = role;
     _lastError = null;
 
+    final settings = _settings;
+    if (settings == null || !settings.isConfigured) {
+      _lastError = 'LiveKit is not configured. Open Settings and add your '
+          'LiveKit URL and API key/secret.';
+      notifyListeners();
+      throw Exception(_lastError);
+    }
+
     try {
       final token = await _fetchToken(
         roomId     : roomId,
@@ -146,6 +159,22 @@ class LiveKitService extends ChangeNotifier {
     required String displayName,
     required bool canPublish,
   }) async {
+    final settings = _settings!;
+
+    // Preferred path: mint the token on-device from the user's own key/secret.
+    if (settings.canMintLocally) {
+      return LiveKitToken.mint(
+        apiKey: settings.apiKey,
+        apiSecret: settings.apiSecret,
+        identity: userId,
+        name: displayName,
+        room: roomId,
+        canPublish: canPublish,
+      );
+    }
+
+    // Fallback path: ask a token server for the token.
+    final tokenEndpoint = settings.tokenUrl;
     final uri = Uri.parse(tokenEndpoint).replace(queryParameters: {
       'room'      : roomId,
       'identity'  : userId,

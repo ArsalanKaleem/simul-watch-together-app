@@ -1,0 +1,37 @@
+rules_version = '2';
+
+// SIMUL — Firestore security rules.
+//
+// These are sensible STARTER rules: any signed-in user can read/write room
+// data. That's fine for a hobby / friends deployment. For anything public you
+// should tighten them (e.g. verify the writer is a member of the room, rate
+// limit chat, validate field shapes). Review before you rely on them.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // User profiles — a user may write only their own doc; anyone signed in
+    // can read basic profiles (names/avatars shown in rooms).
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create, update, delete: if signedIn() && request.auth.uid == userId;
+    }
+
+    // Rooms and everything under them (messages, videoSync, signaling, queue,
+    // reactions, activityLog, typing, connect4, participants, …).
+    match /rooms/{roomId} {
+      allow read: if signedIn();
+      // Self-join fix: a signed-in user may create/update the room doc (host
+      // creates it; joiners update presence/participants).
+      allow create, update: if signedIn();
+      allow delete: if signedIn();
+
+      match /{sub=**} {
+        allow read, write: if signedIn();
+      }
+    }
+  }
+}

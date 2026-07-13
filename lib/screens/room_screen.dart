@@ -15,6 +15,7 @@ import '../widgets/queue/video_queue_panel.dart';
 import '../widgets/game/connect4_screen.dart';
 import '../models/activity_log.dart';
 import '../screens/about_screen.dart';
+import '../screens/settings_screen.dart';
 
 class RoomScreen extends StatefulWidget {
   final String roomId;
@@ -1518,6 +1519,16 @@ class _AppDrawer extends StatelessWidget {
               child: Divider(color: SimulColors.border, height: 1),
             ),
             const SizedBox(height: 8),
+
+            _DrawerTile(
+              icon : Icons.settings_outlined,
+              label: 'Settings',
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()));
+              },
+            ),
 
             _DrawerTile(
               icon : Icons.person_outline_rounded,

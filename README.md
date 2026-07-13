@@ -1,240 +1,230 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/ArsalanKaleemand/simul/main/assets/logo.png" alt="SIMUL Logo" width="120" height="120">
-</p>
+# SIMUL
 
-<h1 align="center">SIMUL</h1>
-<p align="center">Watch together, in sync.</p>
+**Watch together, in sync.** SIMUL is a cross-platform Flutter app for watching
+YouTube in sync with friends, sharing your screen *with audio*, talking over
+voice chat, reacting live, and playing Connect 4 — all in a shared room.
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Flutter-%2302569B.svg?style=for-the-badge&logo=Flutter&logoColor=white" alt="Flutter">
-  <img src="https://img.shields.io/badge/Dart-%230175C2.svg?style=for-the-badge&logo=Dart&logoColor=white" alt="Dart">
-  <img src="https://img.shields.io/badge/Firebase-%23FFCA28.svg?style=for-the-badge&logo=firebase&logoColor=black" alt="Firebase">
-  <img src="https://img.shields.io/badge/LiveKit-%2324292e.svg?style=for-the-badge&logo=livekit&logoColor=white" alt="LiveKit">
-  <img src="https://img.shields.io/github/license/ArsalanKaleemand/simul?style=for-the-badge" alt="MIT License">
-</p>
+Built with Flutter + Firebase (auth, rooms, chat, sync state) and
+[LiveKit](https://livekit.io) (voice + screen share).
 
----
-
-## Overview
-
-SIMUL is a feature-rich, cross-platform co-watching application built with Flutter. It enables friends to watch YouTube videos together in perfect synchronization while simultaneously engaging through real-time voice chat, high-fidelity screen sharing with audio, live text chat, interactive emoji reactions, and turn-based multiplayer Connect 4 games within shared virtual rooms.
-
-Engineered for ultra-low latency and seamless state synchronization, SIMUL delivers a unified digital hangout experience across mobile, desktop, and web platforms from a single codebase.
+> ⚠️ The app code here has been reviewed but not compiled in this bundle.
+> After `flutter pub get`, run `flutter analyze` and fix any nits before shipping.
 
 ---
 
 ## Features
 
-- 🎬 **Synchronized YouTube Playback** – Real-time state synchronization ensures play, pause, and seek actions stay perfectly aligned for every participant in the room.
-- 👥 **Shared Rooms** – Easily create or join persistent or temporary watch spaces via unique, shareable room codes.
-- 🔊 **Real-Time Voice Chat** – High-fidelity, low-latency spatial voice communication powered by the LiveKit WebRTC architecture.
-- 🖥️ **Screen Sharing with Audio** – Broadcast your desktop view or specific browser tabs natively, complete with full system and tab audio pass-through.
-- 💬 **Live Chat & Reactions** – Text communication integrated alongside animated floating emoji reactions for immediate, expressive interaction.
-- 🎮 **Connect 4 Multiplayer** – An embedded, turn-based room game allowing friends to play seamlessly alongside media playback.
-- 🌗 **Dynamic Theming** – Complete integration for beautifully polished, system-aware Light and Dark visual themes.
-- 🌐 **True Cross-Platform Ecosystem** – Native performance and fluid execution across Android, iOS, Web, Windows, macOS, and Linux targets.
+- 🎬 **Synced YouTube** — play/pause/seek stays in sync for everyone
+- 🖥️ **Screen sharing with audio** — share a browser tab (or desktop) *with sound*
+- 🔊 **Live voice chat**
+- 🔇 **Per-viewer audio control** — each viewer can mute the shared audio locally
+- 💬 **Live chat + reactions**
+- 🎮 **Connect 4** — just tap a column to join and play
+- 🌗 **Light / dark mode** (engine + Settings/About done; see *Theming*)
+- 🔐 **In-app LiveKit setup** — paste your own keys in Settings; stored securely
+- 📱 **Runs on** Web, Windows, macOS, Linux, Android, iOS
 
 ---
 
-## Screenshots
+## How it's wired (read this first)
 
-> 🎬 Production screenshots and interactive demo GIFs coming soon.
+Two backends, and they're handled very differently:
 
----
+**1. Firebase — already set up. You do nothing.**
+Auth, rooms, chat, YouTube sync state and the game run on a **shared Firebase
+project** that ships configured in `lib/firebase_options.dart`.
 
-## Architecture
+**2. LiveKit — each user brings their own, entered in-app.**
+The real-time voice / screen-share layer is the metered part, so every user
+supplies **their own** LiveKit project. There's a **Settings screen** in the app
+(gear icon on the home screen, or the side drawer in a room) where you paste:
 
-SIMUL cleanly separates real-time structural state orchestration from intensive media streaming pipelines to guarantee horizontal scalability and high performance.
+- your **LiveKit URL** (`wss://your-project.livekit.cloud`)
+- your **API Key** and **API Secret**
 
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                              SIMUL CLIENT                               │
-│         (Flutter Architecture: UI Layer ──► Provider State Provider)    │
-└───────┬───────────────────────────────┬────────────────────────┬───────┘
-        │                               │                        │
-        │ 1. Sync & Room State          │ 2. WebRTC Media        │ 3. Mint JWT Token
-        ▼                               ▼                        ▼
-┌───────────────────────────────┐ ┌────────────────────────┐ ┌────────────────────┐
-│       FIREBASE BACKEND        │ │   LIVEKIT CLOUD / VM   │ │   NODE.JS SERVER   │
-│  (Auth, Firestore, Rules)     │ │ (Voice & Screen Share) │ │ (Secure Auth Token │
-│                                │ │                        │ │   Generation)      │
-└───────────────────────────────┘ └────────────────────────┘ └────────────────────┘
-```
-
----
-
-## Folder Structure
+Those are saved to **`flutter_secure_storage` on your device** and never leave
+it. With a key + secret present, the app **mints its own LiveKit join tokens
+on-device** — so there's **no token server to run or deploy**. 🎉
 
 ```
-simul/
-├── .github/workflows/          # Automated GitHub Actions continuous integration pipelines
-├── lib/                        # Core Flutter application source workspace
-│   ├── main.dart               # Project entry point, routing, and theme orchestration
-│   ├── firebase_options.dart   # Client-side public Firebase identification rules
-│   ├── screens/                # UI Views (Auth, Room, About, Splash screens)
-│   ├── services/                # Infrastructure: Firestore, LiveKit, and Theme engines
-│   ├── widgets/                 # Reusable UI elements (Chat, Reactions, Connect 4 engine)
-│   └── utils/                   # Core constants, themes, and environmental parameters
-├── token-server/                # Node.js backend app for secure LiveKit token generation
-├── firestore.rules              # Backend security boundary definitions
-└── scripts/                     # Platform execution utility automation scripts
+┌────────────┐   Firebase (shared, already configured)   ┌──────────────┐
+│  SIMUL app │ ─────────────────────────────────────────►│ Firestore+Auth│
+└─────┬──────┘                                            └──────────────┘
+      │ voice + screen share
+      │ token minted on-device from YOUR pasted key/secret
+      ▼
+  YOUR LiveKit project (wss://…livekit.cloud)
 ```
 
 ---
 
-## Getting Started
+## Quick start
 
-### Prerequisites
-
-Ensure you have configured the following runtime environments locally before deploying:
-
-- [Flutter SDK](https://docs.flutter.dev/get-started/install) (Stable Channel)
-- [Node.js](https://nodejs.org/) (v18+ recommended)
-- An active [LiveKit Cloud Account](https://cloud.livekit.io) (or a validated self-hosted instance)
-
-### Installation
-
-1. Clone the workspace repository:
-   ```bash
-   git clone https://github.com/ArsalanKaleemand/simul.git
-   cd simul
-   ```
-
-2. Retrieve Flutter application dependencies:
-   ```bash
-   flutter pub get
-   ```
-
-3. Install Node.js token server dependencies:
-   ```bash
-   cd token-server
-   npm install
-   ```
-
-### LiveKit Setup
-
-1. Log into your LiveKit Cloud Console.
-2. Copy your project's target WebSocket URL (e.g., `wss://your-project.livekit.cloud`).
-3. Navigate to **Settings > Keys** and generate a unique API Key and API Secret.
-
-### Token Server Setup
-
-Within the `token-server` directory, duplicate the environment configuration template:
-
+### 1. Clone & add two dependencies
 ```bash
-cp .env.example .env
+git clone https://github.com/YOUR_USERNAME/simul.git
+cd simul
+```
+Add these to your `pubspec.yaml` under `dependencies:` (also listed in
+[`pubspec.additions.yaml`](pubspec.additions.yaml)):
+```yaml
+  flutter_secure_storage: ^9.2.2
+  crypto: ^3.0.5
+```
+Then:
+```bash
+flutter pub get
 ```
 
-Populate `.env` with your secure LiveKit credentials:
+### 2. Run the app
+```bash
+flutter run -d chrome     # or windows / macos / your device
+```
+No build-time flags, no `.env`, no token server.
 
-```
-LIVEKIT_API_KEY=your_livekit_api_key_here
-LIVEKIT_API_SECRET=your_livekit_api_secret_here
-```
+### 3. Paste your LiveKit keys in Settings
+1. Create a free project at **https://cloud.livekit.io**.
+2. In **Settings → Keys**, create an **API Key** + **API Secret** and copy your
+   project **URL** (`wss://your-project.livekit.cloud`).
+3. In the app, tap the **⚙️ gear** on the home screen → paste **URL**,
+   **API Key**, **API Secret** → **Save**.
+
+That's it. Create or join a room, turn on your mic, share a tab — you're live.
+
+> The Settings screen shows a green banner once a valid configuration is saved.
 
 ---
 
-## Running the Project
+## Fully local development (optional)
 
-**1. Start the Token Server Locally**
+Want to test without LiveKit Cloud? Run a local server and use dev keys:
+```bash
+livekit-server --dev      # LiveKit at ws://localhost:7880, key=devkey secret=secret
+```
+Then in the app's **Settings**, enter:
+- URL: `ws://localhost:7880`
+- API Key: `devkey`
+- API Secret: `secret`
+
+(If you leave Settings empty, the app also falls back to these localhost dev
+defaults automatically.)
+
+---
+
+## Advanced: use a token server instead of on-device minting
+
+On-device minting means your API **secret** sits in device storage. That's fine
+for your *own* key on your *own* device, but if you'd rather keep the secret off
+the client entirely, the repo includes a small Node token server in
+[`token-server/`](token-server/):
 
 ```bash
 cd token-server
-npm start
+cp .env.example .env      # set LIVEKIT_API_KEY / LIVEKIT_API_SECRET
+npm install && npm start  # serves /token on :5000
+```
+Deploy it (Render / Railway / Fly.io / Cloud Run), then in the app's Settings →
+**Advanced** paste the **Token Server URL** and leave the API Secret blank. The
+app will fetch tokens from the server instead of minting them.
+
+---
+
+## LiveKit free tier — what you get
+
+LiveKit Cloud's free **Build** plan needs no credit card and gives roughly:
+
+- **~5,000 WebRTC participant-minutes / month**
+- **~50 GB data transfer / month**
+- A **hard cap** — connections stop when you hit it and reset next month. It's
+  **recurring monthly**, not a one-time trial.
+
+Participant-minutes are counted **per person**, so a 2-person room uses 2
+minutes per real minute:
+
+- **Voice-only, 2 people:** ~5,000 ÷ 2 ≈ **~40 hours/month**.
+- **Screen sharing, 2 people:** bandwidth-bound — ~2.5 Mbps ≈ ~1.1 GB/hr per
+  viewer, so 50 GB ≈ **~40 hours/month** too.
+- **More people / higher quality → proportionally fewer hours.**
+
+So: *a few dozen hours of 2-person sessions per month, free.* Check
+https://livekit.com/pricing for current numbers.
+
+---
+
+## Project structure
+
+```
+simul/
+├── lib/
+│   ├── main.dart                       # entry; providers + theming
+│   ├── firebase_options.dart           # shared Firebase config (committed)
+│   ├── screens/
+│   │   ├── settings_screen.dart        # ← paste LiveKit keys here
+│   │   ├── auth_screen.dart · room_screen.dart · about_screen.dart · splash_screen.dart
+│   ├── services/
+│   │   ├── app_settings_service.dart   # secure-storage config store
+│   │   ├── livekit_token.dart          # on-device JWT minting
+│   │   ├── livekit_service.dart · firebase_service.dart · youtube_sync_service.dart · connect4_service.dart · theme_controller.dart
+│   ├── widgets/                         # chat, reactions, queue, game, share viewer
+│   └── utils/constants.dart            # theme palette + dev fallbacks
+├── token-server/                       # OPTIONAL token server (advanced)
+├── firestore.rules                     # starter security rules
+└── .github/workflows/                  # flutter analyze CI
 ```
 
-**2. Execute the Client Application**
+---
 
-Compile and run the Flutter client targeting production environments with explicit configuration mapping variables:
+## Configuration reference
 
-```bash
-flutter run -d chrome \
-  --dart-define=USE_PRODUCTION=true \
-  --dart-define=LIVEKIT_URL=wss://your-project.livekit.cloud \
-  --dart-define=LIVEKIT_TOKEN_URL=http://localhost:5000/token
+| What | Where | Who sets it |
+|------|-------|-------------|
+| Firebase | `lib/firebase_options.dart` | Maintainer (already done) |
+| LiveKit URL / key / secret | **In-app Settings** → secure storage | **Each user** |
+| Token server (optional) | `token-server/.env` + Settings → Advanced | Advanced users |
+| Firestore rules | `firestore.rules` | Maintainer (`firebase deploy --only firestore:rules`) |
+
+---
+
+## Known caveats (please read)
+
+- **Screen-share audio needs a checkbox.** In the browser's "Choose what to
+  share" dialog, share a **Chrome/Edge tab** and tick **"Share tab audio"**.
+  Sharing a bare *window* gives no audio; Firefox/Safari support is limited.
+- **First click unlocks sound.** Browsers block incoming audio until a user
+  gesture; the app calls `startAudio()` on interaction and shows an
+  "Enable sound" button if still blocked. Expected browser behavior.
+- **Viewer audio control is on/off mute**, not a volume slider — the LiveKit
+  *Flutter* SDK has no per-track gain.
+- **Secret storage on web is best-effort.** `flutter_secure_storage` on web
+  can't match native Keychain/Keystore guarantees. Since it's the user's *own*
+  key, this is acceptable; use the token-server path if you need the secret off
+  the client.
+- **Light/dark is partial.** Engine, Settings and About are done; other screens
+  still render dark until their colors are migrated to `SimulColors.of(context)`
+  (see below).
+- **App Check recommended.** The Firebase config is public in this repo, so keep
+  `firestore.rules` tight and enable Firebase App Check.
+
+---
+
+## Theming: finishing light mode
+
+Each remaining screen just swaps static colors for the theme-aware palette:
+```dart
+final c = SimulColors.of(context);   // then c.bg, c.card, c.text, …
 ```
-
-To configure permanent fallback defaults, modify `_liveKitUrlProd` and `_liveKitTokenUrlProd` constants within `lib/utils/constants.dart`.
-
----
-
-## Firebase Configuration & Security
-
-### Why Client Configurations Are Public By Design
-
-This repository deliberately tracks the following client-side infrastructure metadata files:
-
-- `lib/firebase_options.dart`
-- `google-services.json`
-- `GoogleService-Info.plist`
-
-> **Note**
-> In the Firebase architecture, client configuration records contain only non-sensitive identifiers (such as API keys and Project IDs) required to link the client app with cloud services. They are not server secrets, database credentials, or administrative keys.
-
-### Backend Protection Blueprint
-
-Security boundaries in SIMUL are strictly enforced at the database and application layers, rendering client configuration exposure non-critical:
-
-- **Firebase Authentication:** Restricts platform interaction strictly to verified user profiles.
-- **Firestore Security Rules:** Enforces fine-grained write/read operational boundaries. Users can exclusively write to metadata segments matching their validated UID or room authorization mapping.
-- **Firebase App Check:** Integrated to validate incoming network payloads, ensuring requests originate exclusively from authentic, untampered instances of this application.
-
-### Custom Backend Migration
-
-If you prefer hosting an isolated backend infrastructure, provision a distinct Firebase application instance, execute the standard `flutterfire configure` procedure to overwrite the workspace variables, and deploy the included `firestore.rules` structure.
-
-### Security Paradigm
-
-To maintain optimal enterprise-grade posture throughout application execution, the following infrastructure boundaries are explicitly maintained:
-
-- **Zero App-Layer Secrets:** Server credentials, service account certificates, and infrastructure secrets are strictly excluded from client runtimes.
-- **Decoupled Secrets Pipeline:** The critical `LIVEKIT_API_SECRET` resides strictly inside the environment layer of the isolated server instance.
-- **Automated Exclusions:** Local files containing sensitive data profiles (`.env`) are explicitly configured under `.gitignore` definitions to prevent accidental public disclosure tracking.
-
----
-
-## Troubleshooting
-
-Modern web browsers enforce strict media autoplay security layers. Audio channels will remain muted automatically until a user triggers an active gesture profile within the viewport. SIMUL resolves this via interactive interface flags ("Enable Sound") designed to establish direct media permissions context on client initialization.
-
-When distributing system media through desktop screensharing, confirm you are selecting an independent browser tab context rather than a software application container, and verify the explicitly designated "Share tab audio" interactive configuration checkbox is selected.
-
-Ensure compile targets possess complete system dependency trees. Desktop builds (Linux/Windows) require active system C++ toolchains and development headers natively configured prior to local compilations.
-
----
-
-## Roadmap
-
-- [ ] Add customizable user avatars and custom status profiles.
-- [ ] Integrate additional synchronized video hosting architectures (Vimeo, Twitch, Custom HLS streams).
-- [ ] Add native Picture-in-Picture (PiP) hardware support across iOS and Android operating systems.
-- [ ] Introduce spatial audio algorithms for large-scale immersive environments.
+Mapping: `SimulColors.black → c.bg`, `.surface → c.surface`, `.card → c.card`,
+`.border → c.border`, `.muted → c.muted`, `.white → c.text`. Drop `const` where
+the compiler flags it. `settings_screen.dart` and `about_screen.dart` are
+worked examples.
 
 ---
 
 ## Contributing
 
-Contributions are welcome. Review the standard contribution pipeline before opening modifications:
-
-1. Fork the workspace repository.
-2. Structure a dedicated functional feature branch (`git checkout -b feature/AmazingFeature`).
-3. Commit your enhancements (`git commit -m 'Add some AmazingFeature'`).
-4. Ensure target codebase components conform to validation checks (`flutter analyze`).
-5. Push changes to the repository tracking origin (`git push origin feature/AmazingFeature`).
-6. Initiate an official Pull Request.
-
----
+PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Run `flutter analyze`
+before opening one.
 
 ## License
 
-Distributed under the terms of the MIT Open Source License. Review `LICENSE` documentation details inside the repository root for extended usage specifications.
-
----
-
-## Author
-
-**Arsalan Kaleem**
-
-- GitHub: [@ArsalanKaleem](https://github.com/ArsalanKaleem)
-- Portfolio: [arsalankaleem.github.io/portfolio](https://arsalankaleem.github.io/portfolio)
-- LinkedIn: [in/arsalankaleem](https://linkedin.com/in/arsalankaleem)
+[MIT](LICENSE) © 2026 Arsalan Kaleem

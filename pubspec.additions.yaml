@@ -1,0 +1,13 @@
+# ── Add these to the `dependencies:` section of your pubspec.yaml ──
+# (Everything else your app already uses stays as-is. Run `flutter pub get`
+#  after adding them.)
+
+  # Secure on-device storage for the LiveKit credentials entered in Settings.
+  flutter_secure_storage: ^9.2.2
+
+  # HMAC-SHA256 for minting LiveKit join tokens on-device (no token server).
+  crypto: ^3.0.5
+
+# Also make sure the About photo folder is registered under `flutter:` →
+#   assets:
+#     - lib/assets/
