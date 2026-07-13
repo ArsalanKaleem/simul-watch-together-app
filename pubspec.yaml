@@ -39,6 +39,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  # Uncomment and point at your asset folders if you add any:
-  # assets:
-  #   - assets/images/
+  assets:
+  - lib/assets/me.png

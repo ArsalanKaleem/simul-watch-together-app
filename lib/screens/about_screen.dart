@@ -15,7 +15,7 @@ class AboutScreen extends StatelessWidget {
   static const String _name    = 'Arsalan Kaleem';
   static const String _field   = 'Computer Science';
   static const String _school  = 'The Shaikh Ayaz University';
-  static const String _photo   = 'lib/assets/portfo-img.jpg';
+  static const String _photo   = 'lib/assets/me.png';
   static const String _bio =
       'A short bio about yourself goes here. Tell people who you are, what '
       'you do, and what drives you.';
@@ -24,9 +24,9 @@ class AboutScreen extends StatelessWidget {
       'YouTube videos in real time, chat, share screens, and play games — '
       'all in one room.';
   static const List<_Link> _links = [
-    _Link(Icons.language_rounded, 'Website', 'yourwebsite.com'),
-    _Link(Icons.alternate_email_rounded, 'GitHub', '@yourgithub'),
-    _Link(Icons.mail_outline_rounded, 'Email', 'you@email.com'),
+    _Link(Icons.badge_outlined, 'Portfolio', 'arsalankaleem.github.io/portfolio'),
+    _Link(Icons.alternate_email_rounded, 'GitHub', '@ArsalanKaleem'),
+    _Link(Icons.business_center_outlined, 'LinkedIn', 'in/arsalankaleem'),
   ];
   // ───────────────────────────────────────────────────────────────────────
 
@@ -168,7 +168,7 @@ class _ProfileCard extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment:
-            centered ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+        centered ? CrossAxisAlignment.center : CrossAxisAlignment.start,
         children: [
           Container(
             width: 132,
@@ -318,24 +318,24 @@ class _LinksCard extends StatelessWidget {
           ]),
           const SizedBox(height: 8),
           ...links.map((l) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Row(children: [
-                  Icon(l.icon, color: c.subtle, size: 16),
-                  const SizedBox(width: 12),
-                  Text(l.label,
-                      style: TextStyle(
-                          color: c.faint,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500)),
-                  const Spacer(),
-                  Flexible(
-                    child: Text(l.value,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.right,
-                        style: TextStyle(color: c.text, fontSize: 14)),
-                  ),
-                ]),
-              )),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(children: [
+              Icon(l.icon, color: c.subtle, size: 16),
+              const SizedBox(width: 12),
+              Text(l.label,
+                  style: TextStyle(
+                      color: c.faint,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500)),
+              const Spacer(),
+              Flexible(
+                child: Text(l.value,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: TextStyle(color: c.text, fontSize: 14)),
+              ),
+            ]),
+          )),
         ],
       ),
     );
@@ -352,7 +352,7 @@ class _Footer extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment:
-          alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.center,
+      alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.center,
       children: [
         Text('SIMUL · Version 1.1.0',
             style: TextStyle(color: c.subtle, fontSize: 12)),
