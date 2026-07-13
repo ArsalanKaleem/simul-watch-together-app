@@ -83,12 +83,23 @@ class _FloatingChatState extends State<FloatingChat>
 
   @override
   Widget build(BuildContext context) {
+    final screen = MediaQuery.of(context).size;
+    final keyboard = MediaQuery.of(context).viewInsets.bottom;
+
+    // The panel used to be a hardcoded 320×440, which could clip past the
+    // left edge on narrow phones (~320-360px wide) and get hidden behind the
+    // keyboard while typing (nothing accounted for viewInsets.bottom). Clamp
+    // it to the available space instead, and lift it above the keyboard.
+    final panelWidth = (screen.width - 32).clamp(240.0, 320.0);
+    final panelHeight = (screen.height - 180 - keyboard).clamp(280.0, 440.0);
+
     return Stack(
       children: [
         // Chat panel
         if (_open)
           Positioned(
-            bottom: 80, right: 16,
+            bottom: 80 + keyboard,
+            right: 16,
             child: ScaleTransition(
               scale: _scale,
               alignment: Alignment.bottomRight,
@@ -102,6 +113,8 @@ class _FloatingChatState extends State<FloatingChat>
                 onTyping: _onTyping,
                 onClearReply: () => setState(() => _replyTo = null),
                 onReply: (msg) => setState(() => _replyTo = msg),
+                width: panelWidth,
+                height: panelHeight,
                 onNewMessage: (count) {
                   if (!_open) setState(() => _unread += count - _lastSeenCount);
                   _lastSeenCount = count;
@@ -135,7 +148,7 @@ class _FloatingChatState extends State<FloatingChat>
                       child: Container(
                         padding: const EdgeInsets.all(2),
                         decoration: const BoxDecoration(
-                          color: SimulColors.error, shape: BoxShape.circle),
+                            color: SimulColors.error, shape: BoxShape.circle),
                         constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
                         child: Text('$_unread',
                             style: const TextStyle(color: Colors.white, fontSize: 9,
@@ -163,12 +176,14 @@ class _ChatPanel extends StatelessWidget {
   final VoidCallback onClearReply;
   final Function(Message) onReply;
   final Function(int) onNewMessage;
+  final double width;
+  final double height;
 
   const _ChatPanel({
     required this.roomId, required this.userName, required this.scrollCtrl,
     required this.msgCtrl, required this.replyTo, required this.onSend,
     required this.onTyping, required this.onClearReply, required this.onReply,
-    required this.onNewMessage,
+    required this.onNewMessage, required this.width, required this.height,
   });
 
   @override
@@ -179,7 +194,7 @@ class _ChatPanel extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: Container(
-        width: 320, height: 440,
+        width: width, height: height,
         decoration: BoxDecoration(
           color: SimulColors.surface,
           borderRadius: BorderRadius.circular(16),
@@ -250,6 +265,8 @@ class _ChatPanel extends StatelessWidget {
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 child: Text('${names.join(', ')} typing…',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: SimulColors.faint, fontSize: 11)),
               );
             },
