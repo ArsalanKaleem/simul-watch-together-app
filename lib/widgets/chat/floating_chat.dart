@@ -134,7 +134,7 @@ class _FloatingChatState extends State<FloatingChat>
                 color: SimulColors.white,
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
+                  color: Colors.black.withValues(alpha: 0.3),
                   blurRadius: 12, offset: const Offset(0, 4),
                 )],
               ),
@@ -148,7 +148,7 @@ class _FloatingChatState extends State<FloatingChat>
                       child: Container(
                         padding: const EdgeInsets.all(2),
                         decoration: const BoxDecoration(
-                            color: SimulColors.error, shape: BoxShape.circle),
+                          color: SimulColors.error, shape: BoxShape.circle),
                         constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
                         child: Text('$_unread',
                             style: const TextStyle(color: Colors.white, fontSize: 9,
@@ -200,7 +200,7 @@ class _ChatPanel extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: SimulColors.border),
           boxShadow: [BoxShadow(
-            color: Colors.black.withOpacity(0.4),
+            color: Colors.black.withValues(alpha: 0.4),
             blurRadius: 20, offset: const Offset(0, 8),
           )],
         ),

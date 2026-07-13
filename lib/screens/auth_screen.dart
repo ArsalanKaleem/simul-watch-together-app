@@ -110,9 +110,9 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                         child: Row(children: [
                           _TabBtn('Create Room', _isCreating,
-                                  () => _switchTab(true)),
+                              () => _switchTab(true)),
                           _TabBtn('Join Room', !_isCreating,
-                                  () => _switchTab(false)),
+                              () => _switchTab(false)),
                         ]),
                       ),
 
@@ -140,20 +140,20 @@ class _AuthScreenState extends State<AuthScreen> {
                         height: 50,
                         child: _isLoading
                             ? const Center(
-                          child: SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: SimulColors.white,
-                            ),
-                          ),
-                        )
+                                child: SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: SimulColors.white,
+                                  ),
+                                ),
+                              )
                             : ElevatedButton(
-                          onPressed: _isCreating ? _createRoom : _joinRoom,
-                          child: Text(
-                              _isCreating ? 'Create Room' : 'Join Room'),
-                        ),
+                                onPressed: _isCreating ? _createRoom : _joinRoom,
+                                child: Text(
+                                    _isCreating ? 'Create Room' : 'Join Room'),
+                              ),
                       ),
 
                       const SizedBox(height: 16),
@@ -289,20 +289,20 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   void _err(String msg) => ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(msg),
-      backgroundColor: SimulColors.error,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-    ),
-  );
+        SnackBar(
+          content: Text(msg),
+          backgroundColor: SimulColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
 
   PageRoute _route(Widget page) => PageRouteBuilder(
-    pageBuilder: (_, __, ___) => page,
-    transitionDuration: const Duration(milliseconds: 300),
-    transitionsBuilder: (_, anim, __, child) =>
-        FadeTransition(opacity: anim, child: child),
-  );
+        pageBuilder: (_, __, ___) => page,
+        transitionDuration: const Duration(milliseconds: 300),
+        transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
+      );
 }
 
 // ── Sub-widgets ──────────────────────────────────────────────────────────
@@ -313,33 +313,33 @@ class _Logo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Column(children: [
-    Container(
-      width: 56,
-      height: 56,
-      decoration: BoxDecoration(
-        color: SimulColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: SimulColors.border),
-      ),
-      child: const Center(
-        child: Text('S',
+        Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            color: SimulColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: SimulColors.border),
+          ),
+          child: const Center(
+            child: Text('S',
+                style: TextStyle(
+                    color: SimulColors.white,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w700)),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text('SIMUL',
             style: TextStyle(
                 color: SimulColors.white,
-                fontSize: 28,
-                fontWeight: FontWeight.w700)),
-      ),
-    ),
-    const SizedBox(height: 16),
-    Text('SIMUL',
-        style: TextStyle(
-            color: SimulColors.white,
-            fontSize: compact ? 24 : 28,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 2)),
-    const SizedBox(height: 4),
-    const Text('Watch together, in sync.',
-        style: TextStyle(color: SimulColors.faint, fontSize: 14)),
-  ]);
+                fontSize: compact ? 24 : 28,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 2)),
+        const SizedBox(height: 4),
+        const Text('Watch together, in sync.',
+            style: TextStyle(color: SimulColors.faint, fontSize: 14)),
+      ]);
 }
 
 class _RoomCreatedContent extends StatefulWidget {
@@ -366,7 +366,7 @@ class _RoomCreatedContentState extends State<_RoomCreatedContent> {
         width: 44,
         height: 44,
         decoration: BoxDecoration(
-            color: SimulColors.success.withOpacity(0.12), shape: BoxShape.circle),
+            color: SimulColors.success.withValues(alpha: 0.12), shape: BoxShape.circle),
         child: const Icon(Icons.check_rounded, color: SimulColors.success, size: 24),
       ),
       const SizedBox(height: 16),
@@ -422,7 +422,7 @@ class _RoomCreatedContentState extends State<_RoomCreatedContent> {
           label: Text(_copied ? 'Copied!' : 'Copy',
               overflow: TextOverflow.ellipsis,
               style:
-              TextStyle(color: _copied ? SimulColors.success : SimulColors.faint)),
+                  TextStyle(color: _copied ? SimulColors.success : SimulColors.faint)),
           style: OutlinedButton.styleFrom(
             side: BorderSide(color: _copied ? SimulColors.success : SimulColors.border),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -458,30 +458,30 @@ class _TabBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Expanded(
-    child: GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        margin: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: active ? SimulColors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(9),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            overflow: TextOverflow.ellipsis,
-            maxLines: 1,
-            style: TextStyle(
-              color: active ? SimulColors.black : SimulColors.faint,
-              fontWeight: active ? FontWeight.w600 : FontWeight.normal,
-              fontSize: 14,
+        child: GestureDetector(
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            margin: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: active ? SimulColors.white : Colors.transparent,
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Center(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+                style: TextStyle(
+                  color: active ? SimulColors.black : SimulColors.faint,
+                  fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+                  fontSize: 14,
+                ),
+              ),
             ),
           ),
         ),
-      ),
-    ),
-  );
+      );
 }
 
 class _SimulField extends StatelessWidget {
@@ -498,12 +498,12 @@ class _SimulField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => TextField(
-    controller: controller,
-    textCapitalization: caps,
-    style: const TextStyle(color: SimulColors.white, fontSize: 15),
-    decoration: InputDecoration(
-      labelText: label,
-      prefixIcon: Icon(icon, color: SimulColors.faint, size: 20),
-    ),
-  );
+        controller: controller,
+        textCapitalization: caps,
+        style: const TextStyle(color: SimulColors.white, fontSize: 15),
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon, color: SimulColors.faint, size: 20),
+        ),
+      );
 }

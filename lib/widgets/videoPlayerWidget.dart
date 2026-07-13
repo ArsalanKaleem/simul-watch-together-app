@@ -301,9 +301,9 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   }
 
   @override
-  void didUpdateWidget(VideoPlayerWidget old) {
-    super.didUpdateWidget(old);
-    if (old.videoId != widget.videoId) {
+  void didUpdateWidget(VideoPlayerWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.videoId != widget.videoId) {
       _stopTimer();
       _playerReady = false;
       _isPlaying = false;
@@ -385,7 +385,7 @@ class _DesktopFallbackPlayer extends StatelessWidget {
               errorBuilder: (_, __, ___) =>
                   Container(color: SimulColors.surface),
             ),
-            Container(color: Colors.black.withOpacity(0.58)),
+            Container(color: Colors.black.withValues(alpha: 0.58)),
             Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -407,7 +407,7 @@ class _DesktopFallbackPlayer extends StatelessWidget {
                           horizontal: 16, vertical: 9),
                       decoration: BoxDecoration(
                         color: copied
-                            ? SimulColors.success.withOpacity(0.15)
+                            ? SimulColors.success.withValues(alpha: 0.15)
                             : SimulColors.white,
                         borderRadius: BorderRadius.circular(9),
                       ),

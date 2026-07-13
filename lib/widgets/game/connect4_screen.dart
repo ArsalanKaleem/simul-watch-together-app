@@ -207,7 +207,7 @@ class _Connect4ViewState extends State<_Connect4View> {
                                         ? [
                                             BoxShadow(
                                               color: _cellColor(cell)
-                                                  .withOpacity(0.5),
+                                                  .withValues(alpha: 0.5),
                                               blurRadius: 6,
                                             )
                                           ]
@@ -258,7 +258,7 @@ class _PlayerChip extends StatelessWidget {
       duration: const Duration(milliseconds: 200),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: active ? color.withOpacity(0.15) : Colors.transparent,
+        color: active ? color.withValues(alpha: 0.15) : Colors.transparent,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: active ? color : SimulColors.border),
       ),

@@ -260,7 +260,7 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
     if (wide) {
       showDialog(
         context: context,
-        barrierColor: Colors.black.withOpacity(0.6),
+        barrierColor: Colors.black.withValues(alpha: 0.6),
         builder: (_) => Dialog(
           backgroundColor: Colors.transparent,
           child: Center(
@@ -274,7 +274,7 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
                   border: Border.all(color: SimulColors.border),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.4),
+                      color: Colors.black.withValues(alpha: 0.4),
                       blurRadius: 40,
                       offset: const Offset(0, 20),
                     ),
@@ -760,10 +760,10 @@ class _StatusPill extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
     decoration: BoxDecoration(
-      color: (active ? SimulColors.success : SimulColors.muted).withOpacity(0.15),
+      color: (active ? SimulColors.success : SimulColors.muted).withValues(alpha: 0.15),
       borderRadius: BorderRadius.circular(6),
       border: Border.all(
-          color: (active ? SimulColors.success : SimulColors.muted).withOpacity(0.4)),
+          color: (active ? SimulColors.success : SimulColors.muted).withValues(alpha: 0.4)),
     ),
     child: Row(mainAxisSize: MainAxisSize.min, children: [
       Container(
@@ -822,10 +822,10 @@ class _VideoPlaceholder extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
-                  color: SimulColors.shareActive.withOpacity(0.15),
+                  color: SimulColors.shareActive.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                      color: SimulColors.shareActive.withOpacity(0.4)),
+                      color: SimulColors.shareActive.withValues(alpha: 0.4)),
                 ),
                 child: const Row(mainAxisSize: MainAxisSize.min, children: [
                   Icon(Icons.screen_share_rounded,
@@ -997,9 +997,9 @@ class _Badge extends StatelessWidget {
     margin: const EdgeInsets.only(left: 6),
     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
     decoration: BoxDecoration(
-      color: color.withOpacity(0.1),
+      color: color.withValues(alpha: 0.1),
       borderRadius: BorderRadius.circular(4),
-      border: Border.all(color: color.withOpacity(0.3)),
+      border: Border.all(color: color.withValues(alpha: 0.3)),
     ),
     child: Text(label,
         style: TextStyle(
@@ -1055,7 +1055,7 @@ class _RoomCodeChipState extends State<_RoomCodeChip> {
                 horizontal: large ? 18 : 6, vertical: large ? 10 : 1),
             decoration: BoxDecoration(
               color: _copied
-                  ? SimulColors.success.withOpacity(0.12)
+                  ? SimulColors.success.withValues(alpha: 0.12)
                   : (large ? SimulColors.surface : Colors.transparent),
               borderRadius: BorderRadius.circular(large ? 12 : 5),
               border: large
@@ -1223,7 +1223,7 @@ class _SidebarHeader extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: SimulColors.white.withOpacity(0.08),
+                      color: SimulColors.white.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: const Text('HOST',

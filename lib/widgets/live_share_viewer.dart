@@ -119,9 +119,9 @@ class _AudioButton extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.6),
+            color: Colors.black.withValues(alpha: 0.6),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.white.withOpacity(0.15)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
           ),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Icon(
@@ -153,7 +153,7 @@ class _EnableSoundButton extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color: SimulColors.info.withOpacity(0.9),
+            color: SimulColors.info.withValues(alpha: 0.9),
             borderRadius: BorderRadius.circular(8),
           ),
           child: const Row(mainAxisSize: MainAxisSize.min, children: [
@@ -178,7 +178,7 @@ class _Badge extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: SimulColors.shareActive.withOpacity(0.88),
+          color: SimulColors.shareActive.withValues(alpha: 0.88),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -203,7 +203,7 @@ class _StopButton extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           decoration: BoxDecoration(
-            color: SimulColors.error.withOpacity(0.88),
+            color: SimulColors.error.withValues(alpha: 0.88),
             borderRadius: BorderRadius.circular(8),
           ),
           child: const Row(mainAxisSize: MainAxisSize.min, children: [
