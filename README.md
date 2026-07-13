@@ -66,14 +66,11 @@ It's fully cross-platform from a single Flutter codebase, uses **Firebase** for 
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/connect4.png" width="220"/>
   <img src="docs/screenshots/room-code.png" width="220"/>
 </p>
 
 <p align="center">
-  <b>Connect 4</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <b>Room Code</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <b>Home Banner</b>
 </p>
 
 ---
