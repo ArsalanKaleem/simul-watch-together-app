@@ -240,9 +240,9 @@ class Connect4Service extends ChangeNotifier {
     final ref = _ref(roomId);
     try {
       await _db.runTransaction((tx) async {
-        final doc = await tx.get(ref);
-        if (!doc.exists) return;
-        final data = doc.data()!;
+      final doc = await tx.get(ref);
+      if (!doc.exists) return;
+      final data = doc.data()!;
         if (data['player1Id'] != myId &&
             data['player2Id'] == null &&
             data['player1Id'] != null) {

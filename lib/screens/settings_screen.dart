@@ -53,11 +53,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _save() async {
     await context.read<AppSettingsService>().save(
-      url: _url.text,
-      apiKey: _key.text,
-      apiSecret: _secret.text,
-      tokenUrl: _tokenUrl.text,
-    );
+          url: _url.text,
+          apiKey: _key.text,
+          apiSecret: _secret.text,
+          tokenUrl: _tokenUrl.text,
+        );
     if (!mounted) return;
     setState(() => _saved = true);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -117,8 +117,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 6),
                 Text(
                   'Paste the details from your own LiveKit project '
-                      '(cloud.livekit.io → Settings → Keys). They are stored '
-                      'securely on this device only.',
+                  '(cloud.livekit.io → Settings → Keys). They are stored '
+                  'securely on this device only.',
                   style: TextStyle(color: c.muted, fontSize: 13, height: 1.4),
                 ),
                 const SizedBox(height: 20),
@@ -159,7 +159,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 8),
                 Text(
                   'With a key + secret, the app generates join tokens on this '
-                      'device — no server to run.',
+                  'device — no server to run.',
                   style: TextStyle(color: c.faint, fontSize: 12, height: 1.4),
                 ),
 
@@ -197,9 +197,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const SizedBox(height: 8),
                   Text(
                     'If set and no API secret is provided, the app fetches '
-                        'tokens from here instead of minting them locally.',
+                    'tokens from here instead of minting them locally.',
                     style:
-                    TextStyle(color: c.faint, fontSize: 12, height: 1.4),
+                        TextStyle(color: c.faint, fontSize: 12, height: 1.4),
                   ),
                 ],
 
@@ -257,7 +257,7 @@ class _StatusBanner extends StatelessWidget {
             configured
                 ? 'LiveKit is configured. Voice and screen sharing are ready.'
                 : 'LiveKit is not configured yet. Add your details below to '
-                'enable voice and screen sharing.',
+                    'enable voice and screen sharing.',
             style: TextStyle(color: c.text, fontSize: 13, height: 1.4),
           ),
         ),
@@ -308,7 +308,7 @@ class _Field extends StatelessWidget {
             fillColor: c.surface,
             suffixIcon: suffix,
             contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
               borderSide: BorderSide(color: c.border),
@@ -449,14 +449,14 @@ class _SetupTutorialState extends State<_SetupTutorial> {
                       Expanded(
                         child: Text(
                           'Tips: If you can see chat but not hear each '
-                              'other, you\'re probably on two different LiveKit '
-                              'projects — double check your URL/Key/Secret match '
-                              'exactly. On desktop, share a browser TAB and tick '
-                              '"Share tab audio" so sound comes through. If you '
-                              "can't hear anyone, tap the \"Enable sound\" button "
-                              '— browsers block audio until you interact once. '
-                              'On phones, use "Share a Video Link" from the menu '
-                              'instead of tab sharing.',
+                          'other, you\'re probably on two different LiveKit '
+                          'projects — double check your URL/Key/Secret match '
+                          'exactly. On desktop, share a browser TAB and tick '
+                          '"Share tab audio" so sound comes through. If you '
+                          "can't hear anyone, tap the \"Enable sound\" button "
+                          '— browsers block audio until you interact once. '
+                          'On phones, use "Share a Video Link" from the menu '
+                          'instead of tab sharing.',
                           style: TextStyle(
                               color: c.faint, fontSize: 12, height: 1.5),
                         ),
@@ -480,14 +480,14 @@ class _TutorialHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(children: [
-    Icon(icon, color: c.accent, size: 16),
-    const SizedBox(width: 8),
-    Expanded(
-      child: Text(text,
-          style: TextStyle(
-              color: c.text, fontSize: 13, fontWeight: FontWeight.w700)),
-    ),
-  ]);
+        Icon(icon, color: c.accent, size: 16),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(text,
+              style: TextStyle(
+                  color: c.text, fontSize: 13, fontWeight: FontWeight.w700)),
+        ),
+      ]);
 }
 
 class _TutorialStep extends StatelessWidget {
@@ -498,30 +498,30 @@ class _TutorialStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: 8),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 20, height: 20,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: c.accent.withValues(alpha: 0.12),
-            shape: BoxShape.circle,
-          ),
-          child: Text(n,
-              style: TextStyle(
-                  color: c.accent,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700)),
+        padding: const EdgeInsets.only(top: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 20, height: 20,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: c.accent.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Text(n,
+                  style: TextStyle(
+                      color: c.accent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700)),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(text,
+                  style: TextStyle(
+                      color: c.faint, fontSize: 13, height: 1.45)),
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(text,
-              style: TextStyle(
-                  color: c.faint, fontSize: 13, height: 1.45)),
-        ),
-      ],
-    ),
-  );
+      );
 }

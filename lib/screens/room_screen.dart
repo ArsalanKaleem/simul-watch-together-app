@@ -256,7 +256,7 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
           const SizedBox(height: 4),
           const Text(
             'Tab sharing needs a desktop browser — on your phone, paste a '
-                'YouTube link instead and it plays for everyone, in sync.',
+            'YouTube link instead and it plays for everyone, in sync.',
             textAlign: TextAlign.center,
             style: TextStyle(
                 color: SimulColors.faint, fontSize: 12, height: 1.4),
@@ -1808,8 +1808,8 @@ class _AppDrawer extends StatelessWidget {
               label: isSharing
                   ? 'Stop Sharing'
                   : (AppConfig.isScreenShareSupported
-                  ? 'Share Screen / Tab'
-                  : 'Share a Video Link'),
+                      ? 'Share Screen / Tab'
+                      : 'Share a Video Link'),
               onTap: () { Navigator.pop(context); onToggleScreenShare(); },
             ),
 

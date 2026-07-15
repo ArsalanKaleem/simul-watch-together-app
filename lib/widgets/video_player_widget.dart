@@ -5,10 +5,17 @@ import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_windows/webview_windows.dart' as win;
 import '../utils/constants.dart';
+// Conditional: the web build gets a real <iframe> platform view; every other
+// platform gets a stub that returns null so dart:ui_web / package:web are
+// never pulled into a non-web build.
+import 'yt_web_player_stub.dart'
+    if (dart.library.js_interop) 'yt_web_player_web.dart';
+import 'yt_web_player_stub.dart' show YtWebHandle;
 
 /// SIMUL Video Player — true cross-platform inline playback.
 ///
-///   • Web / Android / iOS / macOS  -> webview_flutter
+///   • Web                          -> <iframe> platform view + postMessage
+///   • Android / iOS / macOS        -> webview_flutter
 ///   • Windows                      -> webview_windows (Edge WebView2)
 ///   • Anything else / init failure -> copy-link fallback card
 ///
@@ -41,11 +48,13 @@ class VideoPlayerWidget extends StatefulWidget {
   State<VideoPlayerWidget> createState() => VideoPlayerWidgetState();
 }
 
-enum _Engine { flutterWebView, windowsWebView, none }
+enum _Engine { web, flutterWebView, windowsWebView, none }
 
 class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   _Engine _engine = _Engine.none;
 
+  // web (<iframe> platform view)
+  YtWebHandle? _webHandle;
   // flutter webview
   WebViewController? _ctrl;
   // windows webview
@@ -69,11 +78,15 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   double get currentPosition => _currentPosition;
   bool get isPlaying => _isPlaying;
 
+  // NOTE: kIsWeb is deliberately NOT in this list. webview_flutter has no
+  // Flutter Web implementation — constructing a WebViewController on web
+  // throws "A platform implementation for `webview_flutter` has not been
+  // set", which is what black-screened the room. Web uses _Engine.web.
   static bool get _flutterWebViewSupported =>
-      kIsWeb ||
-      defaultTargetPlatform == TargetPlatform.android ||
-      defaultTargetPlatform == TargetPlatform.iOS ||
-      defaultTargetPlatform == TargetPlatform.macOS;
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS);
 
   static bool get _isWindows =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
@@ -81,6 +94,10 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   @override
   void initState() {
     super.initState();
+    if (kIsWeb) {
+      _initWebIframe();
+      return;
+    }
     if (_flutterWebViewSupported) {
       _engine = _Engine.flutterWebView;
       _initFlutterWebView();
@@ -93,6 +110,20 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   }
 
   // ── Engine init ─────────────────────────────────────────────────────────────
+
+  void _initWebIframe() {
+    final handle = createYtWebPlayer(
+      videoId  : widget.videoId,
+      onMessage: _handleMessage,
+    );
+    if (handle == null) {
+      _engine = _Engine.none;
+      return;
+    }
+    _webHandle = handle;
+    _engine = _Engine.web;
+    _armReadyTimeout();
+  }
 
   void _initFlutterWebView() {
     final ctrl = WebViewController()
@@ -133,7 +164,21 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     });
   }
 
+  int _reloadCount = 0;
+
   void _reload() {
+    if (_engine == _Engine.web) {
+      // The iframe's src is baked in when the view factory runs, so a new
+      // video (or a stuck load) means building a fresh platform view.
+      // Bounded so a permanently-unready player can't reload forever.
+      if (_reloadCount >= 2) return;
+      _reloadCount++;
+      _webHandle?.dispose();
+      _webHandle = null;
+      _initWebIframe();
+      if (mounted) setState(() {});
+      return;
+    }
     final html = _buildHtml(widget.videoId,
         windows: _engine == _Engine.windowsWebView);
     if (_engine == _Engine.flutterWebView) {
@@ -207,7 +252,9 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   void _startTimer() {
     _positionTimer?.cancel();
     _positionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_playerReady) _runJs('sendPos()');
+      // The web iframe streams currentTime to us automatically via
+      // infoDelivery — only the WebView engines need polling.
+      if (_engine != _Engine.web && _playerReady) _runJs('sendPos()');
     });
   }
 
@@ -359,26 +406,47 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
 
   void play() {
     _isSyncing = true;
-    if (_playerReady) _runJs('playV()');
+    if (_engine == _Engine.web) {
+      _webHandle?.play();
+    } else if (_playerReady) {
+      _runJs('playV()');
+    }
     Future.delayed(const Duration(milliseconds: 300), () => _isSyncing = false);
   }
 
   void pause() {
     _isSyncing = true;
-    if (_playerReady) _runJs('pauseV()');
+    if (_engine == _Engine.web) {
+      _webHandle?.pause();
+    } else if (_playerReady) {
+      _runJs('pauseV()');
+    }
     Future.delayed(const Duration(milliseconds: 300), () => _isSyncing = false);
   }
 
   void seekTo(double s) {
     _isSyncing = true;
-    if (_playerReady) _runJs('seekTo($s)');
+    if (_engine == _Engine.web) {
+      _webHandle?.seekTo(s);
+    } else if (_playerReady) {
+      _runJs('seekTo($s)');
+    }
     Future.delayed(const Duration(milliseconds: 1500), () => _isSyncing = false);
   }
 
   void syncTo(double s, bool playing) {
     _isSyncing = true;
     _isPlaying = playing;
-    if (_playerReady) _runJs('syncTo($s,$playing)');
+    if (_engine == _Engine.web) {
+      _webHandle?.seekTo(s);
+      if (playing) {
+        _webHandle?.play();
+      } else {
+        _webHandle?.pause();
+      }
+    } else if (_playerReady) {
+      _runJs('syncTo($s,$playing)');
+    }
     Future.delayed(const Duration(milliseconds: 1500), () => _isSyncing = false);
   }
 
@@ -401,7 +469,14 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       _lastReported = -1;
       _copied = false;
       _fatalError = null;
+      _reloadCount = 0;
       if (_engine == _Engine.none) {
+        setState(() {});
+      } else if (_engine == _Engine.web) {
+        // New video → new iframe (src can't be mutated meaningfully).
+        _webHandle?.dispose();
+        _webHandle = null;
+        _initWebIframe();
         setState(() {});
       } else {
         _reload();
@@ -414,6 +489,7 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   void dispose() {
     _stopTimer();
     _readyTimeout?.cancel();
+    _webHandle?.dispose();
     _winSub?.cancel();
     _winCtrl?.dispose();
     super.dispose();
@@ -427,6 +503,12 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
         reason: _fatalError!,
         copied: _copied,
         onCopy: _copyLink,
+      );
+    }
+    if (_engine == _Engine.web && _webHandle != null) {
+      return AspectRatio(
+        aspectRatio: 16 / 9,
+        child: HtmlElementView(viewType: _webHandle!.viewType),
       );
     }
     if (_engine == _Engine.flutterWebView && _ctrl != null) {

@@ -144,8 +144,8 @@ class _Connect4ViewState extends State<_Connect4View> {
                 final label = canJoin
                     ? 'Tap any column to join as Player 2'
                     : (amPlayer
-                    ? (isMyTurn ? 'Your turn!' : 'Waiting…')
-                    : 'Spectating');
+                        ? (isMyTurn ? 'Your turn!' : 'Waiting…')
+                        : 'Spectating');
                 final color = (canJoin || isMyTurn)
                     ? SimulColors.success
                     : SimulColors.faint;
@@ -207,11 +207,11 @@ class _Connect4ViewState extends State<_Connect4View> {
                                 // second person just taps a column to start
                                 // playing — no separate "join" step required.
                                 onTap: game.winner == 0 &&
-                                    ((amPlayer && isMyTurn) ||
-                                        (!amPlayer &&
-                                            game.player2Id == null))
+                                        ((amPlayer && isMyTurn) ||
+                                            (!amPlayer &&
+                                                game.player2Id == null))
                                     ? () => game.dropPiece(
-                                    widget.roomId, myId, myName, col)
+                                        widget.roomId, myId, myName, col)
                                     : null,
                                 child: Container(
                                   decoration: BoxDecoration(
@@ -219,12 +219,12 @@ class _Connect4ViewState extends State<_Connect4View> {
                                     shape: BoxShape.circle,
                                     boxShadow: cell != 0
                                         ? [
-                                      BoxShadow(
-                                        color: _cellColor(cell)
-                                            .withValues(alpha: 0.5),
-                                        blurRadius: 6,
-                                      )
-                                    ]
+                                            BoxShadow(
+                                              color: _cellColor(cell)
+                                                  .withValues(alpha: 0.5),
+                                              blurRadius: 6,
+                                            )
+                                          ]
                                         : null,
                                   ),
                                 ),
