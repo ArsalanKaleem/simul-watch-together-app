@@ -27,6 +27,10 @@ class _FloatingChatState extends State<FloatingChat>
   Message? _replyTo;
   Timer? _typingTimer;
   int _lastSeenCount = 0;
+  // Until the first snapshot lands we don't know the baseline, so the old
+  // code counted the entire chat history as "unread" the moment you entered
+  // a room. Seed the baseline instead of counting it.
+  bool _seenFirstSnapshot = false;
 
   @override
   void initState() {
@@ -56,21 +60,48 @@ class _FloatingChatState extends State<FloatingChat>
     final text = _msgCtrl.text.trim();
     if (text.isEmpty) return;
     final svc = context.read<FirebaseService>();
-    await svc.sendMessage(widget.roomId, text, widget.userName,
-        replyToId: _replyTo?.id, replyToText: _replyTo?.text);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    // Capture the reply target BEFORE clearing it, or the reply metadata is
+    // lost by the time the write runs.
+    final replyTo = _replyTo;
+
+    // Optimistically clear the field so typing feels instant, but keep the
+    // text so we can restore it if the send fails.
     _msgCtrl.clear();
     setState(() => _replyTo = null);
-    await svc.setTyping(widget.roomId, false);
     _typingTimer?.cancel();
-    Future.delayed(const Duration(milliseconds: 100), _scrollBottom);
+
+    try {
+      await svc.sendMessage(widget.roomId, text, widget.userName,
+          replyToId: replyTo?.id, replyToText: replyTo?.text);
+      // Firestore writes were unguarded here: when the client is offline this
+      // throws straight out of the send button's callback as an unhandled
+      // async error. Now it degrades to a toast and the text is given back.
+      await svc.setTyping(widget.roomId, false);
+      if (!mounted) return;
+      Future.delayed(const Duration(milliseconds: 100), _scrollBottom);
+    } catch (e) {
+      debugPrint('[Chat] send failed: $e');
+      if (!mounted) return;
+      _msgCtrl.text = text; // don't lose what they typed
+      setState(() => _replyTo = replyTo); // and don't lose the reply context
+      messenger?.showSnackBar(SnackBar(
+        content: const Text("Message not sent — you appear to be offline."),
+        backgroundColor: SimulColors.error,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+    }
   }
 
   void _onTyping(String val) {
     final svc = context.read<FirebaseService>();
-    svc.setTyping(widget.roomId, val.isNotEmpty);
+    // Fire-and-forget presence write — must never surface as an unhandled
+    // async error while someone is simply typing.
+    svc.setTyping(widget.roomId, val.isNotEmpty).catchError((_) {});
     _typingTimer?.cancel();
     _typingTimer = Timer(const Duration(seconds: 3), () {
-      svc.setTyping(widget.roomId, false);
+      svc.setTyping(widget.roomId, false).catchError((_) {});
     });
   }
 
@@ -130,28 +161,22 @@ class _FloatingChatState extends State<FloatingChat>
                   blurRadius: 12, offset: const Offset(0, 4),
                 )],
               ),
-              child: Stack(
-                children: [
-                  const Center(child: Icon(Icons.chat_bubble_outline,
-                      color: SimulColors.black, size: 24)),
-                  if (_unread > 0)
-                    Positioned(
-                      top: 8, right: 8,
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: const BoxDecoration(
-                            color: SimulColors.error, shape: BoxShape.circle),
-                        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                        child: Text('$_unread',
-                            style: const TextStyle(color: Colors.white, fontSize: 9,
-                                fontWeight: FontWeight.bold),
-                            textAlign: TextAlign.center),
-                      ),
-                    ),
-                ],
-              ),
+              child: const Center(child: Icon(Icons.chat_bubble_outline,
+                  color: SimulColors.black, size: 24)),
             ),
           ),
+
+          // Unread badge — sits proud of the button's top-right corner. The
+          // outer Stack uses Clip.none, so it can overhang the 56x56 box
+          // without changing the size Scaffold measures for the FAB.
+          if (_unread > 0 && !_open)
+            Positioned(
+              top: -4,
+              right: -4,
+              child: IgnorePointer(
+                child: _UnreadBadge(count: _unread),
+              ),
+            ),
 
           // Chat panel — anchored to the same box's top-right corner (right: 0
           // matches the button's right edge; bottom: 64 clears the 56px button
@@ -175,6 +200,7 @@ class _FloatingChatState extends State<FloatingChat>
                   onTyping: _onTyping,
                   onClearReply: () => setState(() => _replyTo = null),
                   onReply: (msg) => setState(() => _replyTo = msg),
+                  onClose: _toggleChat,
                   width: panelWidth,
                   height: panelHeight,
                   onNewMessage: (count) {
@@ -200,6 +226,7 @@ class _ChatPanel extends StatelessWidget {
   final VoidCallback onClearReply;
   final Function(Message) onReply;
   final Function(int) onNewMessage;
+  final VoidCallback onClose;
   final double width;
   final double height;
 
@@ -207,7 +234,8 @@ class _ChatPanel extends StatelessWidget {
     required this.roomId, required this.userName, required this.scrollCtrl,
     required this.msgCtrl, required this.replyTo, required this.onSend,
     required this.onTyping, required this.onClearReply, required this.onReply,
-    required this.onNewMessage, required this.width, required this.height,
+    required this.onNewMessage, required this.onClose,
+    required this.width, required this.height,
   });
 
   @override
@@ -241,10 +269,24 @@ class _ChatPanel extends StatelessWidget {
               const Spacer(),
               if (isHost)
                 GestureDetector(
-                  onTap: () => svc.clearChat(roomId),
-                  child: const Text('Clear', style: TextStyle(
-                      color: SimulColors.faint, fontSize: 12)),
+                  onTap: () => svc.clearChat(roomId).catchError((_) {}),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    child: Text('Clear', style: TextStyle(
+                        color: SimulColors.faint, fontSize: 12)),
+                  ),
                 ),
+              const SizedBox(width: 4),
+              // Close the panel without having to hunt for the bubble again.
+              InkWell(
+                onTap: onClose,
+                borderRadius: BorderRadius.circular(8),
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(Icons.close_rounded,
+                      color: SimulColors.faint, size: 18),
+                ),
+              ),
             ]),
           ),
 
@@ -485,6 +527,92 @@ class _MsgBubble extends StatelessWidget {
                 title: const Text('Delete', style: TextStyle(color: SimulColors.error)),
                 onTap: () { Navigator.pop(context); onDelete(); }),
         ]),
+      ),
+    );
+  }
+}
+
+
+/// Small unread pill on the chat bubble. Pulses briefly whenever the count
+/// changes so a newly-arrived message is noticeable without being loud.
+class _UnreadBadge extends StatefulWidget {
+  final int count;
+  const _UnreadBadge({required this.count});
+
+  @override
+  State<_UnreadBadge> createState() => _UnreadBadgeState();
+}
+
+class _UnreadBadgeState extends State<_UnreadBadge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+    lowerBound: 0.0,
+    upperBound: 1.0,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse.forward(from: 0);
+  }
+
+  @override
+  void didUpdateWidget(_UnreadBadge old) {
+    super.didUpdateWidget(old);
+    if (old.count != widget.count) _pulse.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final label = widget.count > 9 ? '9+' : '${widget.count}';
+    return AnimatedBuilder(
+      animation: _pulse,
+      builder: (context, child) {
+        // One soft ring that expands and fades out, then settles.
+        final t = Curves.easeOut.transform(_pulse.value);
+        return Stack(
+          alignment: Alignment.center,
+          clipBehavior: Clip.none,
+          children: [
+            if (_pulse.value < 1)
+              Container(
+                width: 20 + 16 * t,
+                height: 20 + 16 * t,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: SimulColors.error.withValues(alpha: 0.35 * (1 - t)),
+                ),
+              ),
+            child!,
+          ],
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+        decoration: BoxDecoration(
+          color: SimulColors.error,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: SimulColors.black, width: 2),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            height: 1.1,
+          ),
+        ),
       ),
     );
   }
