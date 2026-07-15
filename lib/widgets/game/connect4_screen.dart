@@ -25,9 +25,32 @@ class _Connect4View extends StatefulWidget {
 }
 
 class _Connect4ViewState extends State<_Connect4View> {
+  String? _shownError;
+
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg),
+      backgroundColor: SimulColors.error,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final game = context.watch<Connect4Service>();
+
+    // Surface backend failures (offline, permissions) instead of the tap
+    // silently doing nothing. Deferred so we never show a SnackBar mid-build.
+    if (game.lastError != null && game.lastError != _shownError) {
+      _shownError = game.lastError;
+      final msg = game.lastError!;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _toast(msg));
+    } else if (game.lastError == null) {
+      _shownError = null;
+    }
+
     final fb = context.read<FirebaseService>();
     final myId = fb.currentUser?.id ?? '';
     final myName = fb.currentUser?.name ?? '';
@@ -121,8 +144,8 @@ class _Connect4ViewState extends State<_Connect4View> {
                 final label = canJoin
                     ? 'Tap any column to join as Player 2'
                     : (amPlayer
-                        ? (isMyTurn ? 'Your turn!' : 'Waiting…')
-                        : 'Spectating');
+                    ? (isMyTurn ? 'Your turn!' : 'Waiting…')
+                    : 'Spectating');
                 final color = (canJoin || isMyTurn)
                     ? SimulColors.success
                     : SimulColors.faint;
@@ -145,15 +168,6 @@ class _Connect4ViewState extends State<_Connect4View> {
                 child: const Text('Play Again'),
               ),
             ],
-            if (!amPlayer && game.player2Id == null)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: TextButton(
-                  onPressed: () =>
-                      game.joinAsPlayer(widget.roomId, myId, myName),
-                  child: const Text('Join as Player 2'),
-                ),
-              ),
           ]),
         ),
 
@@ -193,11 +207,11 @@ class _Connect4ViewState extends State<_Connect4View> {
                                 // second person just taps a column to start
                                 // playing — no separate "join" step required.
                                 onTap: game.winner == 0 &&
-                                        ((amPlayer && isMyTurn) ||
-                                            (!amPlayer &&
-                                                game.player2Id == null))
+                                    ((amPlayer && isMyTurn) ||
+                                        (!amPlayer &&
+                                            game.player2Id == null))
                                     ? () => game.dropPiece(
-                                        widget.roomId, myId, myName, col)
+                                    widget.roomId, myId, myName, col)
                                     : null,
                                 child: Container(
                                   decoration: BoxDecoration(
@@ -205,12 +219,12 @@ class _Connect4ViewState extends State<_Connect4View> {
                                     shape: BoxShape.circle,
                                     boxShadow: cell != 0
                                         ? [
-                                            BoxShadow(
-                                              color: _cellColor(cell)
-                                                  .withValues(alpha: 0.5),
-                                              blurRadius: 6,
-                                            )
-                                          ]
+                                      BoxShadow(
+                                        color: _cellColor(cell)
+                                            .withValues(alpha: 0.5),
+                                        blurRadius: 6,
+                                      )
+                                    ]
                                         : null,
                                   ),
                                 ),
