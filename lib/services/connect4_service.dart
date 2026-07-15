@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 const int kRows = 6;
 const int kCols = 7;
@@ -19,36 +20,105 @@ class Connect4Service extends ChangeNotifier {
   String? gameDocId;
   bool isActive = false;
 
+  bool _disposed = false;
+
+  /// The last error the service hit, if any (surfaced in the UI).
+  String? lastError;
+
   DocumentReference<Map<String, dynamic>> _ref(String roomId) =>
       _db.collection('rooms').doc(roomId).collection('connect4').doc('game');
+
+  /// notifyListeners() that is safe to call from a Firestore snapshot.
+  ///
+  /// Two real crashes came from calling notifyListeners() naively here:
+  ///   1. Firestore can deliver a CACHED snapshot synchronously, while the
+  ///      widget that created this service is still building. Notifying then
+  ///      marks listeners dirty during build → framework assertion.
+  ///   2. A snapshot can land after the provider disposed this service →
+  ///      "used after being disposed" throw.
+  void _safeNotify() {
+    if (_disposed) return;
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.persistentCallbacks ||
+        phase == SchedulerPhase.midFrameMicrotasks ||
+        phase == SchedulerPhase.transientCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_disposed) notifyListeners();
+      });
+    } else {
+      notifyListeners();
+    }
+  }
+
+  /// Rebuilds a 6x7 board from Firestore's flat array, tolerating a missing,
+  /// short, over-long or wrongly-typed array instead of throwing a RangeError
+  /// inside the stream (which surfaced as an unhandled crash).
+  List<List<int>> _parseBoard(dynamic raw) {
+    final flat = List<int>.filled(kRows * kCols, 0);
+    if (raw is List) {
+      for (var i = 0; i < kRows * kCols && i < raw.length; i++) {
+        final v = raw[i];
+        flat[i] = v is num ? v.toInt() : 0;
+      }
+    }
+    return List.generate(
+        kRows, (r) => flat.sublist(r * kCols, r * kCols + kCols));
+  }
 
   void listenToGame(String roomId) {
     _gameSub?.cancel();
     _gameSub = _ref(roomId).snapshots().listen((snap) {
-      if (!snap.exists) { isActive = false; notifyListeners(); return; }
-      final data = snap.data()!;
-      isActive = true;
-      currentTurn = data['currentTurn'] ?? 1;
-      player1Id = data['player1Id'];
-      player2Id = data['player2Id'];
-      player1Name = data['player1Name'];
-      player2Name = data['player2Name'];
-      winner = data['winner'] ?? 0;
-      final flat = List<int>.from(data['board'] ?? List.filled(kRows * kCols, 0));
-      board = List.generate(kRows, (r) => flat.sublist(r * kCols, r * kCols + kCols));
-      notifyListeners();
+      if (_disposed) return;
+      try {
+        if (!snap.exists) {
+          isActive = false;
+          _safeNotify();
+          return;
+        }
+        final data = snap.data() ?? const <String, dynamic>{};
+        isActive    = true;
+        currentTurn = (data['currentTurn'] as num?)?.toInt() ?? 1;
+        player1Id   = data['player1Id'] as String?;
+        player2Id   = data['player2Id'] as String?;
+        player1Name = data['player1Name'] as String?;
+        player2Name = data['player2Name'] as String?;
+        winner      = (data['winner'] as num?)?.toInt() ?? 0;
+        board       = _parseBoard(data['board']);
+        lastError   = null;
+        _safeNotify();
+      } catch (e) {
+        debugPrint('[Connect4] snapshot parse failed: $e');
+        lastError = 'Could not read the game state.';
+        _safeNotify();
+      }
+    }, onError: (e) {
+      debugPrint('[Connect4] stream error: $e');
+      lastError = 'Lost connection to the game.';
+      _safeNotify();
     });
   }
 
-  Future<void> startGame(String roomId, String myId, String myName,
+  /// Returns true on success. Never throws — a Firestore write can fail
+  /// (offline, rules), and an unguarded throw here surfaced as an unhandled
+  /// async error straight out of the button's onPressed, crashing the tab.
+  Future<bool> startGame(String roomId, String myId, String myName,
       {String? opponentId, String? opponentName}) async {
-    final flat = List<int>.filled(kRows * kCols, 0);
-    await _ref(roomId).set({
-      'board': flat, 'currentTurn': 1, 'winner': 0,
-      'player1Id': myId, 'player1Name': myName,
-      'player2Id': opponentId, 'player2Name': opponentName,
-      'startedAt': FieldValue.serverTimestamp(),
-    });
+    try {
+      final flat = List<int>.filled(kRows * kCols, 0);
+      await _ref(roomId).set({
+        'board': flat, 'currentTurn': 1, 'winner': 0,
+        'player1Id': myId, 'player1Name': myName,
+        'player2Id': opponentId, 'player2Name': opponentName,
+        'startedAt': FieldValue.serverTimestamp(),
+      });
+      lastError = null;
+      return true;
+    } catch (e) {
+      debugPrint('[Connect4] startGame failed: $e');
+      lastError = "Couldn't start the game — check your connection.";
+      _safeNotify();
+      return false;
+    }
   }
 
   /// Drops a piece for [myId] in [col].
@@ -60,6 +130,7 @@ class Connect4Service extends ChangeNotifier {
   /// tap did anything — miss it, and only player 1 could ever play. Now the
   /// second person simply taps a column and is seated automatically.
   Future<bool> dropPiece(String roomId, String myId, String myName, int col) async {
+    if (col < 0 || col >= kCols) return false;
     final ref = _ref(roomId);
     try {
       return await _db.runTransaction<bool>((tx) async {
@@ -128,6 +199,8 @@ class Connect4Service extends ChangeNotifier {
       });
     } catch (e) {
       debugPrint('[Connect4] dropPiece failed: $e');
+      lastError = "Couldn't make that move — check your connection.";
+      _safeNotify();
       return false;
     }
   }
@@ -148,28 +221,47 @@ class Connect4Service extends ChangeNotifier {
     return 0;
   }
 
-  Future<void> restartGame(String roomId) async {
-    await _ref(roomId).update({
-      'board': List.filled(kRows * kCols, 0), 'currentTurn': 1, 'winner': 0,
-    });
+  Future<bool> restartGame(String roomId) async {
+    try {
+      await _ref(roomId).update({
+        'board': List.filled(kRows * kCols, 0), 'currentTurn': 1, 'winner': 0,
+      });
+      lastError = null;
+      return true;
+    } catch (e) {
+      debugPrint('[Connect4] restartGame failed: $e');
+      lastError = "Couldn't restart the game — check your connection.";
+      _safeNotify();
+      return false;
+    }
   }
 
   Future<void> joinAsPlayer(String roomId, String myId, String myName) async {
     final ref = _ref(roomId);
-    await _db.runTransaction((tx) async {
-      final doc = await tx.get(ref);
-      if (!doc.exists) return;
-      final data = doc.data()!;
-      if (data['player1Id'] != myId &&
-          data['player2Id'] == null &&
-          data['player1Id'] != null) {
-        tx.update(ref, {'player2Id': myId, 'player2Name': myName});
-      }
-    });
+    try {
+      await _db.runTransaction((tx) async {
+        final doc = await tx.get(ref);
+        if (!doc.exists) return;
+        final data = doc.data()!;
+        if (data['player1Id'] != myId &&
+            data['player2Id'] == null &&
+            data['player1Id'] != null) {
+          tx.update(ref, {'player2Id': myId, 'player2Name': myName});
+        }
+      });
+    } catch (e) {
+      debugPrint('[Connect4] joinAsPlayer failed: $e');
+      lastError = "Couldn't join the game — check your connection.";
+      _safeNotify();
+    }
   }
 
   void stopListening() { _gameSub?.cancel(); }
 
   @override
-  void dispose() { _gameSub?.cancel(); super.dispose(); }
+  void dispose() {
+    _disposed = true;
+    _gameSub?.cancel();
+    super.dispose();
+  }
 }
