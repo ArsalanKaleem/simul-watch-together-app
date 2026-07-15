@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 import '../utils/constants.dart';
 import '../services/firebase_service.dart';
@@ -29,6 +30,12 @@ class RoomScreen extends StatefulWidget {
 class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _urlCtrl     = TextEditingController();
+  // The placeholder's URL field and the below-video URL field are in
+  // DIFFERENT subtrees that swap in the same frame when a video loads. They
+  // must not share one TextEditingController — a single controller attached
+  // to a TextField being destroyed and another being created in the same
+  // frame is what triggered the focus-scope assertion crash.
+  final _placeholderUrlCtrl = TextEditingController();
   final _videoKey    = GlobalKey<VideoPlayerWidgetState>();
   late TabController _bottomTab;
 
@@ -100,9 +107,20 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
         final playing = state['isPlaying'] as bool? ?? true;
         switch (action) {
           case 'load':
-            setState(() {
-              _currentVideoId    = state['videoId'] as String?;
-              _viewMode          = 'youtube';
+            final newId = state['videoId'] as String?;
+            // Ignore echoes of the video we're already showing — rebuilding
+            // the player subtree for no reason is both wasteful and a chance
+            // to hit the swap bug again.
+            if (newId == null ||
+                (newId == _currentVideoId && _viewMode == 'youtube')) {
+              break;
+            }
+            // Release focus before the placeholder subtree (which owns a text
+            // field) is replaced by the player.
+            FocusManager.instance.primaryFocus?.unfocus();
+            _safeSetState(() {
+              _currentVideoId = newId;
+              _viewMode       = 'youtube';
             });
           case 'play':
             _videoKey.currentState?.syncTo(pos, true);
@@ -132,17 +150,20 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
     if (!mounted) return;
     final lk = context.read<LiveKitService>();
     final isSharingNow = lk.isSharing || lk.hasRemoteShare;
+    // These also swap the main view subtree, and they fire from
+    // notifyListeners() which can land mid-frame — same hazard as the sync
+    // stream, so go through the phase-safe path.
     if (isSharingNow && _viewMode != 'screenshare') {
-      setState(() => _viewMode = 'screenshare');
+      _safeSetState(() => _viewMode = 'screenshare');
     } else if (!isSharingNow && _viewMode == 'screenshare') {
-      setState(() => _viewMode = 'youtube');
+      _safeSetState(() => _viewMode = 'youtube');
     }
   }
 
   // ── Video loading ──────────────────────────────────────────────────────────
 
   void _loadVideo(String videoId, String title) {
-    setState(() {
+    _safeSetState(() {
       _currentVideoId    = videoId;
       _viewMode          = 'youtube';
     });
@@ -150,16 +171,21 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
         widget.roomId, _myUserId, videoId, title: title);
   }
 
-  void _loadFromUrl() {
-    final url = _urlCtrl.text.trim();
+  void _loadFromUrl(TextEditingController source) {
+    final url = source.text.trim();
     if (url.isEmpty) return;
     final id = _extractYouTubeId(url);
     if (id == null) {
       _snack('Could not recognise a YouTube URL', isError: true);
       return;
     }
+    // The URL field lives in a subtree that is about to be torn down (the
+    // placeholder is replaced by the player in the same frame). If it still
+    // holds focus when its ancestor focus scope is disposed, Flutter throws
+    // "_dependents.isEmpty"/"not a descendant" assertions. Drop focus first.
+    FocusManager.instance.primaryFocus?.unfocus();
+    source.clear();
     _loadVideo(id, 'YouTube Video');
-    _urlCtrl.clear();
   }
 
   /// Extracts a YouTube video ID from any common URL format.
@@ -230,7 +256,7 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
           const SizedBox(height: 4),
           const Text(
             'Tab sharing needs a desktop browser — on your phone, paste a '
-            'YouTube link instead and it plays for everyone, in sync.',
+                'YouTube link instead and it plays for everyone, in sync.',
             textAlign: TextAlign.center,
             style: TextStyle(
                 color: SimulColors.faint, fontSize: 12, height: 1.4),
@@ -276,6 +302,11 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
             child: ElevatedButton(
               onPressed: () {
                 final url = ctrl.text.trim();
+                // Drop focus BEFORE popping — the sheet's text field is being
+                // destroyed at the same moment _loadVideo swaps the video
+                // subtree, which is exactly the focus-scope teardown that
+                // crashed the app.
+                FocusManager.instance.primaryFocus?.unfocus();
                 Navigator.pop(ctx);
                 if (url.isEmpty) return;
                 final id = _extractYouTubeId(url);
@@ -290,7 +321,7 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
           ),
         ]),
       ),
-    );
+    ).whenComplete(ctrl.dispose);
   }
 
   // ── Voice chat ─────────────────────────────────────────────────────────────
@@ -458,6 +489,27 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
   String? _lastSnackMsg;
   DateTime? _lastSnackAt;
 
+  /// setState that is safe to call from a stream callback.
+  ///
+  /// Firestore sync events can arrive while Flutter is in the middle of a
+  /// build/layout pass. Mutating the element tree at that moment is what
+  /// produced the "_dependents.isEmpty" / "not a descendant" framework
+  /// assertions on the receiving client. If we're mid-frame, defer to just
+  /// after it instead.
+  void _safeSetState(VoidCallback fn) {
+    if (!mounted) return;
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.persistentCallbacks ||
+        phase == SchedulerPhase.midFrameMicrotasks ||
+        phase == SchedulerPhase.transientCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(fn);
+      });
+    } else {
+      setState(fn);
+    }
+  }
+
   void _snack(String msg, {bool isError = false}) {
     final now = DateTime.now();
     // Swallow duplicate messages fired in quick succession (e.g. a
@@ -585,7 +637,7 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
   Widget _belowVideoBars(bool isSharing) {
     return Column(mainAxisSize: MainAxisSize.min, children: [
       if (_viewMode == 'youtube' && _currentVideoId != null)
-        _UrlBar(ctrl: _urlCtrl, onLoad: _loadFromUrl),
+        _UrlBar(ctrl: _urlCtrl, onLoad: () => _loadFromUrl(_urlCtrl)),
       if (_viewMode == 'screenshare')
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -830,8 +882,8 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
 
     // Placeholder
     return _VideoPlaceholder(
-      urlCtrl         : _urlCtrl,
-      onLoad          : _loadFromUrl,
+      urlCtrl         : _placeholderUrlCtrl,
+      onLoad          : () => _loadFromUrl(_placeholderUrlCtrl),
       participantCount: participantCount,
       onShareTap      : _toggleScreenShare,
     );
@@ -876,6 +928,7 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
   void dispose() {
     _syncSub?.cancel();
     _urlCtrl.dispose();
+    _placeholderUrlCtrl.dispose();
     _bottomTab.dispose();
     final lk = context.read<LiveKitService>();
     lk.removeListener(_onLiveKitChanged);
@@ -1755,8 +1808,8 @@ class _AppDrawer extends StatelessWidget {
               label: isSharing
                   ? 'Stop Sharing'
                   : (AppConfig.isScreenShareSupported
-                      ? 'Share Screen / Tab'
-                      : 'Share a Video Link'),
+                  ? 'Share Screen / Tab'
+                  : 'Share a Video Link'),
               onTap: () { Navigator.pop(context); onToggleScreenShare(); },
             ),
 
