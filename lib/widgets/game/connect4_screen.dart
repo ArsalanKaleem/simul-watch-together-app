@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/connect4_service.dart';
@@ -144,8 +146,8 @@ class _Connect4ViewState extends State<_Connect4View> {
                 final label = canJoin
                     ? 'Tap any column to join as Player 2'
                     : (amPlayer
-                        ? (isMyTurn ? 'Your turn!' : 'Waiting…')
-                        : 'Spectating');
+                    ? (isMyTurn ? 'Your turn!' : 'Waiting…')
+                    : 'Spectating');
                 final color = (canJoin || isMyTurn)
                     ? SimulColors.success
                     : SimulColors.faint;
@@ -177,15 +179,25 @@ class _Connect4ViewState extends State<_Connect4View> {
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final cellSize = (constraints.maxWidth - 32 - 8) / kCols;
-              final boardHeight = cellSize * kRows + 8;
+              // The cell size must satisfy BOTH axes. The old code derived it
+              // from width only and then clamped the container's height, so
+              // whenever the tab was shorter than the board's natural height
+              // (e.g. docked under the video on web) the six rows overflowed
+              // — "A RenderFlex overflowed by 123 pixels on the bottom".
+              const pad = 4.0;      // board padding
+              const gap = 3.0;      // padding around each cell
+              final availW = constraints.maxWidth - 32 - pad * 2;
+              final availH = constraints.maxHeight - 8 - pad * 2;
+              final cell = math.min(availW / kCols, availH / kRows);
+
+              // Nothing sensible to draw in a degenerate box.
+              if (cell <= 1 || !cell.isFinite) return const SizedBox.shrink();
 
               return Center(
                 child: Container(
-                  width: constraints.maxWidth - 32,
-                  height: boardHeight.clamp(0.0, constraints.maxHeight - 8),
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
-                  padding: const EdgeInsets.all(4),
+                  width: cell * kCols + pad * 2,
+                  height: cell * kRows + pad * 2,
+                  padding: const EdgeInsets.all(pad),
                   decoration: BoxDecoration(
                     color: const Color(0xFF1A3A5C),
                     borderRadius: BorderRadius.circular(12),
@@ -193,40 +205,40 @@ class _Connect4ViewState extends State<_Connect4View> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: List.generate(kRows, (row) => Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: List.generate(kCols, (col) {
-                        final cell = game.board[row][col];
-                        return Expanded(
+                        final cell0 = game.board[row][col];
+                        return SizedBox(
+                          width: cell,
+                          height: cell,
                           child: Padding(
-                            padding: const EdgeInsets.all(3),
-                            child: AspectRatio(
-                              aspectRatio: 1,
-                              child: GestureDetector(
-                                // Anyone who could still take a seat (or is a
-                                // player whose turn it is) can tap. The service
-                                // auto-seats player 2 and enforces turns, so a
-                                // second person just taps a column to start
-                                // playing — no separate "join" step required.
-                                onTap: game.winner == 0 &&
-                                        ((amPlayer && isMyTurn) ||
-                                            (!amPlayer &&
-                                                game.player2Id == null))
-                                    ? () => game.dropPiece(
-                                        widget.roomId, myId, myName, col)
-                                    : null,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: _cellColor(cell),
-                                    shape: BoxShape.circle,
-                                    boxShadow: cell != 0
-                                        ? [
-                                            BoxShadow(
-                                              color: _cellColor(cell)
-                                                  .withValues(alpha: 0.5),
-                                              blurRadius: 6,
-                                            )
-                                          ]
-                                        : null,
-                                  ),
+                            padding: const EdgeInsets.all(gap),
+                            child: GestureDetector(
+                              // Anyone who could still take a seat (or is a
+                              // player whose turn it is) can tap. The service
+                              // auto-seats player 2 and enforces turns, so a
+                              // second person just taps a column to start
+                              // playing — no separate "join" step required.
+                              onTap: game.winner == 0 &&
+                                  ((amPlayer && isMyTurn) ||
+                                      (!amPlayer &&
+                                          game.player2Id == null))
+                                  ? () => game.dropPiece(
+                                  widget.roomId, myId, myName, col)
+                                  : null,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: _cellColor(cell0),
+                                  shape: BoxShape.circle,
+                                  boxShadow: cell0 != 0
+                                      ? [
+                                    BoxShadow(
+                                      color: _cellColor(cell0)
+                                          .withValues(alpha: 0.5),
+                                      blurRadius: 6,
+                                    )
+                                  ]
+                                      : null,
                                 ),
                               ),
                             ),
