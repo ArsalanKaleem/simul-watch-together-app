@@ -21,6 +21,12 @@ class VideoPlayerWidget extends StatefulWidget {
   final Function(double position, bool isPlaying) onPositionUpdate;
   final VoidCallback? onVideoEnded;
 
+  /// Fired when the video cannot be played after all fallback sources have
+  /// been tried (e.g. owner disabled embedding, video removed/private).
+  /// Gives the parent a chance to toast/log; the widget itself also renders
+  /// a graceful in-player card with Open/Copy actions.
+  final Function(String reason)? onPlayerError;
+
   const VideoPlayerWidget({
     super.key,
     required this.videoId,
@@ -28,6 +34,7 @@ class VideoPlayerWidget extends StatefulWidget {
     required this.onSeek,
     required this.onPositionUpdate,
     this.onVideoEnded,
+    this.onPlayerError,
   });
 
   @override
@@ -54,6 +61,10 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   bool _isSyncing = false;
   double _lastReported = -1;
   bool _copied = false;
+
+  // Set when JS reports that every fallback source failed for this video.
+  // Renders a graceful error card instead of a black/broken player.
+  String? _fatalError;
 
   double get currentPosition => _currentPosition;
   bool get isPlaying => _isPlaying;
@@ -175,8 +186,21 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       _isPlaying = false;
       _stopTimer();
       widget.onVideoEnded?.call();
+    } else if (raw.startsWith('fatal:')) {
+      final code = raw.substring(6);
+      final reason = switch (code) {
+        'noembed'  => 'The video owner has disabled playback outside YouTube.',
+        'notfound' => 'This video is unavailable (removed, private, or region-locked).',
+        'badid'    => "That link doesn't point to a valid YouTube video.",
+        _          => 'This video could not be played after several attempts.',
+      };
+      _readyTimeout?.cancel();
+      _stopTimer();
+      if (mounted) setState(() => _fatalError = reason);
+      widget.onPlayerError?.call(reason);
     } else if (raw.startsWith('error:')) {
-      debugPrint('YT player error: ${raw.substring(6)}');
+      // Non-fatal: the JS retry ladder is still walking through sources.
+      debugPrint('YT player error (retrying): ${raw.substring(6)}');
     }
   }
 
@@ -203,7 +227,7 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
 <style>
   * { margin:0; padding:0; box-sizing:border-box }
   body { background:#000; overflow:hidden; width:100vw; height:100vh }
-  #player { width:100%; height:100% }
+  #player, #player iframe { width:100%; height:100% }
 </style>
 </head>
 <body>
@@ -221,31 +245,93 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   var blocking  = false;
   var playerReady = false;
 
-  function onYouTubeIframeAPIReady() {
-    player = new YT.Player('player', {
-      videoId: '$videoId',
-      host: 'https://www.youtube-nocookie.com',
-      playerVars: {
-        autoplay:1, controls:1, rel:0, modestbranding:1,
-        playsinline:1, enablejsapi:1, iv_load_policy:3,
-        origin:'https://www.youtube-nocookie.com'
-      },
-      events: {
-        onReady: function(e) { playerReady = true; post('ready'); },
-        onStateChange: function(e) {
-          if (blocking) return;
-          if (e.data === YT.PlayerState.PLAYING && lastState !== 1) {
-            lastState = 1; post('state:playing');
-          } else if (e.data === YT.PlayerState.PAUSED && lastState !== 2) {
-            lastState = 2; post('state:paused');
-          } else if (e.data === YT.PlayerState.ENDED) {
-            post('ended');
-          }
+  // ── Multi-source retry ladder ─────────────────────────────────────────
+  // The page is loaded from a local string, so its real origin is opaque
+  // ("about:blank"/null). Claiming a fake `origin` playerVar makes YouTube
+  // reject playback for many videos — so we NEVER set origin, and instead
+  // walk through progressively more permissive sources when the player
+  // reports an error:
+  //   attempt 0: privacy-enhanced host (youtube-nocookie.com)
+  //   attempt 1: standard host (www.youtube.com) — some videos allow one
+  //              host but not the other
+  //   attempt 2: raw <iframe> embed (bypasses IFrame-API construction
+  //              quirks in some WebView engines; JS API attaches after)
+  // Errors 100 (not found/private) and 2 (bad id) are not retried — no
+  // source can fix those. 101/150 (embedding disabled) IS retried once
+  // across hosts because owners can disable per-domain, then reported
+  // fatal if it persists.
+  var attempt = 0;
+  var HOSTS = ['https://www.youtube-nocookie.com', 'https://www.youtube.com'];
+
+  function buildPlayer() {
+    if (player && player.destroy) { try { player.destroy(); } catch(e) {} }
+    document.getElementById('player').innerHTML = '';
+
+    if (attempt <= 1) {
+      player = new YT.Player('player', {
+        videoId: '$videoId',
+        host: HOSTS[attempt],
+        playerVars: {
+          autoplay:1, controls:1, rel:0, modestbranding:1,
+          playsinline:1, enablejsapi:1, iv_load_policy:3
         },
-        onError: function(e) { post('error:' + e.data); }
-      }
-    });
+        events: {
+          onReady: onReady,
+          onStateChange: onStateChange,
+          onError: onError
+        }
+      });
+    } else {
+      // Raw iframe fallback: create the embed directly, then attach the API.
+      var f = document.createElement('iframe');
+      f.id = 'ytframe';
+      f.setAttribute('allow',
+        'autoplay; encrypted-media; picture-in-picture; fullscreen');
+      f.setAttribute('frameborder', '0');
+      f.src = 'https://www.youtube.com/embed/$videoId'
+            + '?enablejsapi=1&autoplay=1&controls=1&rel=0&playsinline=1&iv_load_policy=3';
+      document.getElementById('player').appendChild(f);
+      player = new YT.Player('ytframe', {
+        events: {
+          onReady: onReady,
+          onStateChange: onStateChange,
+          onError: onError
+        }
+      });
+    }
   }
+
+  function onReady(e) { playerReady = true; post('ready'); }
+
+  function onStateChange(e) {
+    if (blocking) return;
+    if (e.data === YT.PlayerState.PLAYING && lastState !== 1) {
+      lastState = 1; post('state:playing');
+    } else if (e.data === YT.PlayerState.PAUSED && lastState !== 2) {
+      lastState = 2; post('state:paused');
+    } else if (e.data === YT.PlayerState.ENDED) {
+      post('ended');
+    }
+  }
+
+  function onError(e) {
+    var code = e.data;
+    post('error:' + code);
+    // Unrecoverable regardless of source:
+    if (code === 100) { post('fatal:notfound'); return; }
+    if (code === 2)   { post('fatal:badid');    return; }
+    // Try the next source in the ladder:
+    if (attempt < 2) {
+      attempt++;
+      setTimeout(buildPlayer, 350);
+    } else {
+      // All sources exhausted. 101/150 = embedding disabled by owner.
+      post((code === 101 || code === 150)
+          ? 'fatal:noembed' : 'fatal:unknown');
+    }
+  }
+
+  function onYouTubeIframeAPIReady() { buildPlayer(); }
 
   function sendPos() {
     if (player && player.getCurrentTime) post('pos:' + player.getCurrentTime());
@@ -314,6 +400,7 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       _currentPosition = 0;
       _lastReported = -1;
       _copied = false;
+      _fatalError = null;
       if (_engine == _Engine.none) {
         setState(() {});
       } else {
@@ -334,6 +421,14 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
 
   @override
   Widget build(BuildContext context) {
+    if (_fatalError != null) {
+      return _PlaybackErrorCard(
+        videoId: widget.videoId,
+        reason: _fatalError!,
+        copied: _copied,
+        onCopy: _copyLink,
+      );
+    }
     if (_engine == _Engine.flutterWebView && _ctrl != null) {
       return AspectRatio(
         aspectRatio: 16 / 9,
@@ -433,6 +528,110 @@ class _DesktopFallbackPlayer extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Shown when a video cannot be played after all fallback sources were tried
+/// (embedding disabled by owner, removed/private video, invalid link). Keeps
+/// the room usable: explains why, and offers copy so people can watch on
+/// YouTube and stay in the room for voice/chat.
+class _PlaybackErrorCard extends StatelessWidget {
+  final String videoId;
+  final String reason;
+  final bool copied;
+  final VoidCallback onCopy;
+  const _PlaybackErrorCard({
+    required this.videoId,
+    required this.reason,
+    required this.copied,
+    required this.onCopy,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.network(
+              'https://img.youtube.com/vi/$videoId/hqdefault.jpg',
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) =>
+                  Container(color: SimulColors.surface),
+            ),
+            Container(color: Colors.black.withValues(alpha: 0.72)),
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(
+                        color: SimulColors.warning.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.play_disabled_rounded,
+                          color: SimulColors.warning, size: 22),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text("This video can't be played here",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            color: SimulColors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 6),
+                    Text(reason,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            color: SimulColors.faint, fontSize: 12, height: 1.4)),
+                    const SizedBox(height: 6),
+                    const Text('Try pasting a different link below.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            color: SimulColors.subtle, fontSize: 11)),
+                    const SizedBox(height: 14),
+                    GestureDetector(
+                      onTap: onCopy,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 9),
+                        decoration: BoxDecoration(
+                          color: copied
+                              ? SimulColors.success.withValues(alpha: 0.15)
+                              : SimulColors.white,
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(copied ? Icons.check_rounded : Icons.copy_rounded,
+                              size: 15,
+                              color: copied
+                                  ? SimulColors.success
+                                  : SimulColors.black),
+                          const SizedBox(width: 7),
+                          Text(copied ? 'Copied!' : 'Copy YouTube link',
+                              style: TextStyle(
+                                  color: copied
+                                      ? SimulColors.success
+                                      : SimulColors.black,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600)),
+                        ]),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],

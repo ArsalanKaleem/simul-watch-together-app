@@ -13,6 +13,7 @@
 #include <flutter_secure_storage_windows/flutter_secure_storage_windows_plugin.h>
 #include <flutter_webrtc/flutter_web_r_t_c_plugin.h>
 #include <livekit_client/live_kit_plugin.h>
+#include <url_launcher_windows/url_launcher_windows.h>
 #include <webview_windows/webview_windows_plugin.h>
 
 void RegisterPlugins(flutter::PluginRegistry* registry) {
@@ -30,6 +31,8 @@ void RegisterPlugins(flutter::PluginRegistry* registry) {
       registry->GetRegistrarForPlugin("FlutterWebRTCPlugin"));
   LiveKitPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("LiveKitPlugin"));
+  UrlLauncherWindowsRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("UrlLauncherWindows"));
   WebviewWindowsPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("WebviewWindowsPlugin"));
 }

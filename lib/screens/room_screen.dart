@@ -50,17 +50,29 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _init() async {
-    try {
-      final fb   = context.read<FirebaseService>();
-      final sync = context.read<YouTubeSyncService>();
-      final lk   = context.read<LiveKitService>();
+    final fb   = context.read<FirebaseService>();
+    final sync = context.read<YouTubeSyncService>();
+    final lk   = context.read<LiveKitService>();
 
+    // Phase 1: Firebase room state (chat, presence, sync). Without this the
+    // room genuinely can't function, so failure gets a clear toast.
+    try {
       await fb.initializeRoom(widget.roomId, widget.userName);
       _myUserId = fb.currentUser?.id ?? '';
+    } catch (e) {
+      debugPrint('Room init (Firebase) error: $e');
+      if (mounted) {
+        _snack("Couldn't reach the room server — check your internet "
+            'connection and re-enter the room.', isError: true);
+      }
+      return;
+    }
 
-      if (_myUserId.isNotEmpty) {
-        // LiveKit's server handles presence, tracks, and reconnection for
-        // us — no manual peer mesh or Socket.IO signalling needed.
+    // Phase 2: LiveKit (voice + screen share). This failing should NOT kill
+    // the room — video sync and chat still work — so degrade gracefully and
+    // tell the person what to do.
+    if (_myUserId.isNotEmpty) {
+      try {
         lk.addListener(_onLiveKitChanged);
         await lk.connect(
           roomId     : widget.roomId,
@@ -68,8 +80,18 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
           displayName: widget.userName,
           role       : fb.isHost ? SimulRole.host : SimulRole.viewer,
         );
+      } catch (e) {
+        debugPrint('Room init (LiveKit) error: $e');
+        if (mounted) {
+          _snack('Voice & screen share are offline — open Settings and check '
+              'your LiveKit setup. Watching together still works.',
+              isError: true);
+        }
       }
+    }
 
+    // Phase 3: video sync stream. Independent of LiveKit.
+    try {
       sync.listenToVideoSync(widget.roomId, _myUserId);
       _syncSub = sync.videoStateStream.listen((state) {
         if (!mounted) return;
@@ -96,8 +118,11 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
         }
       });
     } catch (e) {
-      debugPrint('Room init error: $e');
-      if (mounted) _snack('Could not load room state', isError: true);
+      debugPrint('Room init (sync) error: $e');
+      if (mounted) {
+        _snack('Video sync is unavailable right now — try re-entering the room.',
+            isError: true);
+      }
     }
   }
 
@@ -140,7 +165,9 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
   /// Extracts a YouTube video ID from any common URL format.
   String? _extractYouTubeId(String input) {
     final patterns = [
-      RegExp(r'(?:youtube\.com/watch\?(?:.*&)?v=|youtu\.be/|youtube\.com/shorts/|youtube\.com/embed/)([a-zA-Z0-9_-]{11})'),
+      // watch / share / shorts / embed / live URLs on any youtube host
+      // (www., m., music.) plus youtu.be short links.
+      RegExp(r'(?:youtube\.com/watch\?(?:.*&)?v=|youtu\.be/|youtube\.com/shorts/|youtube\.com/embed/|youtube\.com/live/)([a-zA-Z0-9_-]{11})'),
       RegExp(r'^([a-zA-Z0-9_-]{11})$'), // raw ID
     ];
     for (final p in patterns) {
@@ -154,7 +181,9 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
 
   Future<void> _toggleScreenShare() async {
     if (!AppConfig.isScreenShareSupported) {
-      _snack('Screen sharing is only available on desktop and web', isError: true);
+      // Phones can't capture a browser tab — but they CAN share what they're
+      // watching by pasting its link, which loads it in sync for everyone.
+      _showShareLinkSheet();
       return;
     }
     final lk = context.read<LiveKitService>();
@@ -164,6 +193,104 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
       // Attempted to start but it didn't take (permission denied / cancelled).
       _snack('Screen share cancelled or unavailable');
     }
+  }
+
+  /// Mobile alternative to tab sharing: paste a video link and it loads for
+  /// the whole room via the existing sync pipeline.
+  void _showShareLinkSheet() {
+    final ctrl = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: SimulColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          left: 20, right: 20, top: 20,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 36, height: 4,
+            decoration: BoxDecoration(
+              color: SimulColors.border,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Icon(Icons.link_rounded, color: SimulColors.info, size: 28),
+          const SizedBox(height: 8),
+          const Text('Share by link',
+              style: TextStyle(
+                  color: SimulColors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          const Text(
+            'Tab sharing needs a desktop browser — on your phone, paste a '
+            'YouTube link instead and it plays for everyone, in sync.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                color: SimulColors.faint, fontSize: 12, height: 1.4),
+          ),
+          const SizedBox(height: 16),
+          Row(children: [
+            Expanded(
+              child: TextField(
+                controller: ctrl,
+                autofocus: true,
+                keyboardType: TextInputType.url,
+                style: const TextStyle(color: SimulColors.white, fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: 'https://youtube.com/watch?v=…',
+                  hintStyle: const TextStyle(
+                      color: SimulColors.subtle, fontSize: 13),
+                  filled: true,
+                  fillColor: SimulColors.card,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              tooltip: 'Paste from clipboard',
+              icon: const Icon(Icons.content_paste_rounded,
+                  color: SimulColors.faint, size: 20),
+              onPressed: () async {
+                final data = await Clipboard.getData('text/plain');
+                if (data?.text != null) ctrl.text = data!.text!.trim();
+              },
+            ),
+          ]),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                final url = ctrl.text.trim();
+                Navigator.pop(ctx);
+                if (url.isEmpty) return;
+                final id = _extractYouTubeId(url);
+                if (id == null) {
+                  _snack('Could not recognise a YouTube URL', isError: true);
+                  return;
+                }
+                _loadVideo(id, 'YouTube Video');
+              },
+              child: const Text('Play for everyone'),
+            ),
+          ),
+        ]),
+      ),
+    );
   }
 
   // ── Voice chat ─────────────────────────────────────────────────────────────
@@ -696,6 +823,8 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
         onPositionUpdate: (pos, playing) => context.read<YouTubeSyncService>()
             .sendPositionSync(widget.roomId, _myUserId, pos, playing),
         onVideoEnded: _onVideoEnded,
+        onPlayerError: (reason) =>
+            _snack('Video failed to play: $reason', isError: true),
       );
     }
 
@@ -704,7 +833,7 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
       urlCtrl         : _urlCtrl,
       onLoad          : _loadFromUrl,
       participantCount: participantCount,
-      onShareTap      : AppConfig.isScreenShareSupported ? _toggleScreenShare : null,
+      onShareTap      : _toggleScreenShare,
     );
   }
 
@@ -833,12 +962,15 @@ class _VideoPlaceholder extends StatelessWidget {
                   border: Border.all(
                       color: SimulColors.shareActive.withValues(alpha: 0.4)),
                 ),
-                child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.screen_share_rounded,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.screen_share_rounded,
                       color: SimulColors.shareActive, size: 16),
-                  SizedBox(width: 8),
-                  Text('Share your screen / tab',
-                      style: TextStyle(
+                  const SizedBox(width: 8),
+                  Text(
+                      AppConfig.isScreenShareSupported
+                          ? 'Share your screen / tab'
+                          : 'Share a video by link',
+                      style: const TextStyle(
                           color: SimulColors.shareActive,
                           fontSize: 13,
                           fontWeight: FontWeight.w500)),
@@ -857,44 +989,74 @@ class _UrlBar extends StatelessWidget {
   final VoidCallback onLoad;
   const _UrlBar({required this.ctrl, required this.onLoad});
 
+  Future<void> _pasteFromClipboard() async {
+    final data = await Clipboard.getData('text/plain');
+    if (data?.text != null && data!.text!.trim().isNotEmpty) {
+      ctrl.text = data.text!.trim();
+      onLoad();
+    }
+  }
+
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-    decoration: const BoxDecoration(
-        color: SimulColors.surface,
-        border: Border(bottom: BorderSide(color: SimulColors.border))),
-    child: Row(children: [
-      const Icon(Icons.link_rounded, color: SimulColors.faint, size: 18),
-      const SizedBox(width: 8),
-      Expanded(
-        child: TextField(
-          controller: ctrl,
-          style: const TextStyle(color: SimulColors.white, fontSize: 13),
-          decoration: const InputDecoration(
-            hintText: 'Paste YouTube URL…',
-            hintStyle: TextStyle(color: SimulColors.subtle, fontSize: 13),
-            border: InputBorder.none,
-            isDense: true,
-            contentPadding: EdgeInsets.zero,
+    child: Container(
+      padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
+      decoration: BoxDecoration(
+        color: SimulColors.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: SimulColors.border),
+      ),
+      child: Row(children: [
+        const Icon(Icons.play_circle_outline_rounded,
+            color: SimulColors.error, size: 20),
+        const SizedBox(width: 10),
+        Expanded(
+          child: TextField(
+            controller: ctrl,
+            keyboardType: TextInputType.url,
+            style: const TextStyle(color: SimulColors.white, fontSize: 13),
+            decoration: const InputDecoration(
+              hintText: 'Paste a YouTube link to watch together…',
+              hintStyle: TextStyle(color: SimulColors.subtle, fontSize: 13),
+              border: InputBorder.none,
+              isDense: true,
+              contentPadding: EdgeInsets.symmetric(vertical: 12),
+            ),
+            onSubmitted: (_) => onLoad(),
           ),
-          onSubmitted: (_) => onLoad(),
         ),
-      ),
-      GestureDetector(
-        onTap: onLoad,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-              color: SimulColors.white,
-              borderRadius: BorderRadius.circular(7)),
-          child: const Text('Load',
-              style: TextStyle(
-                  color: SimulColors.black,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600)),
+        IconButton(
+          tooltip: 'Paste & play',
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(Icons.content_paste_go_rounded,
+              color: SimulColors.faint, size: 18),
+          onPressed: _pasteFromClipboard,
         ),
-      ),
-    ]),
+        const SizedBox(width: 2),
+        Material(
+          color: SimulColors.white,
+          borderRadius: BorderRadius.circular(10),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: onLoad,
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.play_arrow_rounded,
+                    color: SimulColors.black, size: 16),
+                SizedBox(width: 4),
+                Text('Play',
+                    style: TextStyle(
+                        color: SimulColors.black,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700)),
+              ]),
+            ),
+          ),
+        ),
+      ]),
+    ),
   );
 }
 
@@ -1584,15 +1746,19 @@ class _AppDrawer extends StatelessWidget {
             ),
             // Screen share also lives here so it's always reachable even on
             // narrow phones, where it's dropped from the AppBar to avoid
-            // overflow.
-            if (AppConfig.isScreenShareSupported)
-              _DrawerTile(
-                icon : isSharing
-                    ? Icons.stop_screen_share_rounded
-                    : Icons.screen_share_rounded,
-                label: isSharing ? 'Stop Sharing' : 'Share Screen / Tab',
-                onTap: () { Navigator.pop(context); onToggleScreenShare(); },
-              ),
+            // overflow. On mobile (no tab capture) this opens the
+            // share-by-link sheet instead.
+            _DrawerTile(
+              icon : isSharing
+                  ? Icons.stop_screen_share_rounded
+                  : Icons.screen_share_rounded,
+              label: isSharing
+                  ? 'Stop Sharing'
+                  : (AppConfig.isScreenShareSupported
+                      ? 'Share Screen / Tab'
+                      : 'Share a Video Link'),
+              onTap: () { Navigator.pop(context); onToggleScreenShare(); },
+            ),
 
             const SizedBox(height: 8),
             const Padding(

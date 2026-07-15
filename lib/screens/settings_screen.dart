@@ -106,7 +106,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _StatusBanner(configured: settings.isConfigured, c: c),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
+                _SetupTutorial(c: c),
+                const SizedBox(height: 24),
                 Text('LiveKit connection',
                     style: TextStyle(
                         color: c.text,
@@ -320,4 +322,200 @@ class _Field extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Expandable "how do I set this up?" walkthrough shown at the top of
+/// Settings. Written for both roles: the person hosting (who needs LiveKit
+/// keys for voice/share) and the friend just joining (who needs nothing but
+/// the room code).
+class _SetupTutorial extends StatefulWidget {
+  final SimulPalette c;
+  const _SetupTutorial({required this.c});
+
+  @override
+  State<_SetupTutorial> createState() => _SetupTutorialState();
+}
+
+class _SetupTutorialState extends State<_SetupTutorial> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.c;
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: c.border),
+      ),
+      child: Column(children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: c.accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.school_outlined, color: c.accent, size: 18),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('How to set up & start watching',
+                        style: TextStyle(
+                            color: c.text,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700)),
+                    Text('A 2-minute guide for you and your friend',
+                        style: TextStyle(color: c.muted, fontSize: 12)),
+                  ],
+                ),
+              ),
+              Icon(
+                _expanded
+                    ? Icons.keyboard_arrow_up_rounded
+                    : Icons.keyboard_arrow_down_rounded,
+                color: c.muted,
+              ),
+            ]),
+          ),
+        ),
+        if (_expanded)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Divider(color: c.border, height: 1),
+                const SizedBox(height: 14),
+
+                _TutorialHeader(c: c, icon: Icons.videocam_outlined,
+                    text: 'Just watching together? No setup needed.'),
+                const SizedBox(height: 6),
+                _TutorialStep(c: c, n: '1',
+                    text: 'One of you creates a room on the home screen and '
+                        'shares the 6-character code.'),
+                _TutorialStep(c: c, n: '2',
+                    text: 'The other enters the code under "Join Room".'),
+                _TutorialStep(c: c, n: '3',
+                    text: 'Paste any YouTube link in the room — play, pause '
+                        'and seek stay in sync for everyone automatically.'),
+
+                const SizedBox(height: 16),
+                _TutorialHeader(c: c, icon: Icons.mic_none_rounded,
+                    text: 'Want voice chat & screen sharing? '
+                        'One-time setup (host only):'),
+                const SizedBox(height: 6),
+                _TutorialStep(c: c, n: '1',
+                    text: 'Go to cloud.livekit.io and create a free account '
+                        'and project (no credit card needed).'),
+                _TutorialStep(c: c, n: '2',
+                    text: 'In LiveKit: Settings → Keys → Create Key. Copy the '
+                        'API Key and the Secret (shown once).'),
+                _TutorialStep(c: c, n: '3',
+                    text: 'Copy your project URL — it looks like '
+                        'wss://your-project.livekit.cloud.'),
+                _TutorialStep(c: c, n: '4',
+                    text: 'Paste all three into the fields below and press '
+                        'Save. The banner above turns green when it worked.'),
+                _TutorialStep(c: c, n: '5',
+                    text: 'Your friend does the same with their own free '
+                        'LiveKit project (or you can share yours privately — '
+                        'both work).'),
+
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: c.card,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.tips_and_updates_outlined,
+                          color: c.warning, size: 16),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Tips: On desktop, share a browser TAB and tick '
+                          '"Share tab audio" so sound comes through. If you '
+                          "can't hear anyone, tap the \"Enable sound\" button "
+                          '— browsers block audio until you interact once. '
+                          'On phones, use "Share a Video Link" from the menu '
+                          'instead of tab sharing.',
+                          style: TextStyle(
+                              color: c.faint, fontSize: 12, height: 1.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ]),
+    );
+  }
+}
+
+class _TutorialHeader extends StatelessWidget {
+  final SimulPalette c;
+  final IconData icon;
+  final String text;
+  const _TutorialHeader({required this.c, required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) => Row(children: [
+        Icon(icon, color: c.accent, size: 16),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(text,
+              style: TextStyle(
+                  color: c.text, fontSize: 13, fontWeight: FontWeight.w700)),
+        ),
+      ]);
+}
+
+class _TutorialStep extends StatelessWidget {
+  final SimulPalette c;
+  final String n;
+  final String text;
+  const _TutorialStep({required this.c, required this.n, required this.text});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 20, height: 20,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: c.accent.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Text(n,
+                  style: TextStyle(
+                      color: c.accent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700)),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(text,
+                  style: TextStyle(
+                      color: c.faint, fontSize: 13, height: 1.45)),
+            ),
+          ],
+        ),
+      );
 }

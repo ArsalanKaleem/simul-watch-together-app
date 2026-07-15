@@ -21,6 +21,7 @@ dependencies:
   # ── Real-time media (LiveKit — replaces mediasoup/flutter_webrtc/socket_io) ──
   livekit_client: ^2.2.5
   http: ^1.2.2
+  url_launcher: ^6.3.0
 
   # ── YouTube playback (custom iframe-API player) ──────────────────────────────
   webview_flutter: ^4.9.0

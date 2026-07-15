@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/theme_controller.dart';
 import '../utils/constants.dart';
 
@@ -17,16 +18,22 @@ class AboutScreen extends StatelessWidget {
   static const String _school  = 'The Shaikh Ayaz University';
   static const String _photo   = 'lib/assets/me.png';
   static const String _bio =
-      'A short bio about yourself goes here. Tell people who you are, what '
-      'you do, and what drives you.';
+      'Computer Science student and Flutter developer who enjoys building '
+      'real-time, cross-platform experiences. SIMUL grew out of wanting to '
+      'watch videos with friends without juggling three different apps — '
+      'so I built one room that does it all.';
   static const String _appInfo =
       'SIMUL is a watch-together app that lets you and your friends sync '
       'YouTube videos in real time, chat, share screens, and play games — '
       'all in one room.';
   static const List<_Link> _links = [
-    _Link(Icons.badge_outlined, 'Portfolio', 'arsalankaleem.github.io/portfolio'),
-    _Link(Icons.alternate_email_rounded, 'GitHub', '@ArsalanKaleem'),
-    _Link(Icons.business_center_outlined, 'LinkedIn', 'in/arsalankaleem'),
+    _Link(Icons.badge_outlined, 'Portfolio',
+        'arsalankaleem.github.io/portfolio',
+        'https://arsalankaleem.github.io/portfolio/'),
+    _Link(Icons.alternate_email_rounded, 'GitHub', '@ArsalanKaleem',
+        'https://github.com/ArsalanKaleem'),
+    _Link(Icons.business_center_outlined, 'LinkedIn', 'in/arsalankaleem',
+        'https://www.linkedin.com/in/arsalankaleem'),
   ];
   // ───────────────────────────────────────────────────────────────────────
 
@@ -317,24 +324,41 @@ class _LinksCard extends StatelessWidget {
                     color: c.text, fontSize: 14, fontWeight: FontWeight.w600)),
           ]),
           const SizedBox(height: 8),
-          ...links.map((l) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Row(children: [
-                  Icon(l.icon, color: c.subtle, size: 16),
-                  const SizedBox(width: 12),
-                  Text(l.label,
-                      style: TextStyle(
-                          color: c.faint,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500)),
-                  const Spacer(),
-                  Flexible(
-                    child: Text(l.value,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.right,
-                        style: TextStyle(color: c.text, fontSize: 14)),
+          ...links.map((l) => Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => launchUrl(Uri.parse(l.url),
+                      mode: LaunchMode.externalApplication),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 10, horizontal: 6),
+                    child: Row(children: [
+                      Icon(l.icon, color: c.subtle, size: 16),
+                      const SizedBox(width: 12),
+                      Text(l.label,
+                          style: TextStyle(
+                              color: c.faint,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500)),
+                      const Spacer(),
+                      Flexible(
+                        child: Text(l.value,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                                color: c.accent,
+                                fontSize: 14,
+                                decoration: TextDecoration.underline,
+                                decorationColor:
+                                    c.accent.withValues(alpha: 0.35))),
+                      ),
+                      const SizedBox(width: 6),
+                      Icon(Icons.open_in_new_rounded,
+                          color: c.subtle, size: 13),
+                    ]),
                   ),
-                ]),
+                ),
               )),
         ],
       ),
@@ -389,5 +413,6 @@ class _Link {
   final IconData icon;
   final String label;
   final String value;
-  const _Link(this.icon, this.label, this.value);
+  final String url;
+  const _Link(this.icon, this.label, this.value, this.url);
 }
