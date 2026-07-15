@@ -1,410 +1,473 @@
+// lib/screens/about_screen.dart
+//
+// 2026-standard About screen:
+//  • Gradient hero with a glowing avatar ring and staggered entrance
+//  • Glassy cards, gradient accents, pill skill chips
+//  • Tappable link buttons (url_launcher) with hover/press feedback
+//  • Fully theme-aware (SimulColors.of) and responsive (two-column ≥ 880px)
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/theme_controller.dart';
 import '../utils/constants.dart';
 
-/// About / profile screen.
-///
-/// Responsive: a centered single column on phones, and a two-column layout on
-/// wide (desktop / web) screens — a sticky profile card on the left, content
-/// on the right. Fully theme-aware via SimulColors.of(context).
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
 
-  // ── EDIT YOUR DETAILS HERE ─────────────────────────────────────────────
-  static const String _name    = 'Arsalan Kaleem';
-  static const String _field   = 'Computer Science';
-  static const String _school  = 'The Shaikh Ayaz University';
-  static const String _photo   = 'lib/assets/me.png';
+  // ── Edit these ──────────────────────────────────────────────────────────
+  static const String _name   = 'Arsalan Kaleem';
+  static const String _field  = 'Computer Science';
+  static const String _school = 'The Shaikh Ayaz University';
+  static const String _photo  = 'lib/assets/me.png';
+
   static const String _bio =
       'Computer Science student and Flutter developer who enjoys building '
       'real-time, cross-platform experiences. SIMUL grew out of wanting to '
       'watch videos with friends without juggling three different apps — '
       'so I built one room that does it all.';
+
+  static const List<String> _skills = [
+    'Flutter', 'Dart', 'Firebase', 'LiveKit', 'WebRTC', 'UI/UX',
+  ];
+
   static const String _appInfo =
-      'SIMUL is a watch-together app that lets you and your friends sync '
-      'YouTube videos in real time, chat, share screens, and play games — '
-      'all in one room.';
+      'SIMUL is a watch-together app: synced YouTube, voice chat, screen '
+      'sharing with audio, live reactions, chat, and Connect 4 — in one '
+      'room, on every platform.';
+
   static const List<_Link> _links = [
-    _Link(Icons.badge_outlined, 'Portfolio',
-        'arsalankaleem.github.io/portfolio',
+    _Link(Icons.language_rounded, 'Portfolio',
         'https://arsalankaleem.github.io/portfolio/'),
-    _Link(Icons.alternate_email_rounded, 'GitHub', '@ArsalanKaleem',
-        'https://github.com/ArsalanKaleem'),
-    _Link(Icons.business_center_outlined, 'LinkedIn', 'in/arsalankaleem',
+    _Link(Icons.code_rounded, 'GitHub', 'https://github.com/ArsalanKaleem'),
+    _Link(Icons.business_center_outlined, 'LinkedIn',
         'https://www.linkedin.com/in/arsalankaleem'),
   ];
-  // ───────────────────────────────────────────────────────────────────────
+  // ────────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final c = SimulColors.of(context);
-    final theme = context.watch<ThemeController>();
-
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(
-        backgroundColor: c.bg,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_rounded, color: c.text),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text('About',
-            style: TextStyle(
-                color: c.text,
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.3)),
-        actions: [
-          _ThemeToggle(
-            isDark: Theme.of(context).brightness == Brightness.dark,
-            onTap: () =>
-                theme.toggle(MediaQuery.platformBrightnessOf(context)),
-          ),
-          const SizedBox(width: 8),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: c.border),
-        ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: IconThemeData(color: c.text),
+        actions: const [_ThemeToggle(), SizedBox(width: 8)],
       ),
-      body: LayoutBuilder(builder: (context, constraints) {
-        final wide = constraints.maxWidth >= 820;
-        return Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1040),
+      extendBodyBehindAppBar: true,
+      body: Stack(children: [
+        // Ambient gradient glows behind everything.
+        const _AmbientGlow(),
+        LayoutBuilder(builder: (context, constraints) {
+          final wide = constraints.maxWidth >= 880;
+          final content = wide
+              ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const SizedBox(width: 340, child: _HeroColumn()),
+                  const SizedBox(width: 28),
+                  Expanded(child: _DetailColumn(c: c)),
+                ])
+              : Column(children: [
+                  const _HeroColumn(),
+                  const SizedBox(height: 24),
+                  _DetailColumn(c: c),
+                ]);
+          return Center(
             child: SingleChildScrollView(
-              padding: EdgeInsets.symmetric(
-                  horizontal: wide ? 40 : 24, vertical: wide ? 48 : 28),
-              child: wide ? _wide(context, c) : _narrow(context, c),
+              padding: EdgeInsets.fromLTRB(
+                  20, MediaQuery.of(context).padding.top + 72, 20, 40),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1080),
+                child: _Entrance(child: content),
+              ),
             ),
-          ),
-        );
-      }),
-    );
-  }
-
-  // ── Wide (desktop / web) ───────────────────────────────────────────────
-  Widget _wide(BuildContext context, SimulPalette c) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Left: profile card (sticky feel via top alignment)
-        SizedBox(
-          width: 320,
-          child: _ProfileCard(c: c, centered: true),
-        ),
-        const SizedBox(width: 32),
-        // Right: content
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _SectionCard(
-                c: c,
-                icon: Icons.info_outline_rounded,
-                label: 'About Me',
-                content: _bio,
-              ),
-              const SizedBox(height: 20),
-              _SectionCard(
-                c: c,
-                icon: Icons.play_circle_outline_rounded,
-                label: 'About SIMUL',
-                content: _appInfo,
-              ),
-              const SizedBox(height: 20),
-              _LinksCard(c: c, links: _links),
-              const SizedBox(height: 28),
-              _Footer(c: c, alignEnd: false),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── Narrow (phone) ─────────────────────────────────────────────────────
-  Widget _narrow(BuildContext context, SimulPalette c) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        _ProfileCard(c: c, centered: true),
-        const SizedBox(height: 24),
-        _SectionCard(
-          c: c,
-          icon: Icons.info_outline_rounded,
-          label: 'About Me',
-          content: _bio,
-        ),
-        const SizedBox(height: 16),
-        _SectionCard(
-          c: c,
-          icon: Icons.play_circle_outline_rounded,
-          label: 'About SIMUL',
-          content: _appInfo,
-        ),
-        const SizedBox(height: 16),
-        _LinksCard(c: c, links: _links),
-        const SizedBox(height: 28),
-        _Footer(c: c, alignEnd: false),
-      ],
+          );
+        }),
+      ]),
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-class _ProfileCard extends StatelessWidget {
-  final SimulPalette c;
-  final bool centered;
-  const _ProfileCard({required this.c, this.centered = false});
+// ── Hero (avatar + identity + links) ──────────────────────────────────────
+
+class _HeroColumn extends StatelessWidget {
+  const _HeroColumn();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-      decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: c.border),
-        boxShadow: [
-          BoxShadow(color: c.shadow, blurRadius: 30, offset: const Offset(0, 12)),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment:
-            centered ? CrossAxisAlignment.center : CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 132,
-            height: 132,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: c.border, width: 2),
-              color: c.card,
-            ),
-            child: ClipOval(
-              child: Image.asset(
-                AboutScreen._photo,
-                width: 132,
-                height: 132,
-                fit: BoxFit.cover,
-                // Shown only if the asset is missing / not yet added.
-                errorBuilder: (_, __, ___) =>
-                    _AvatarFallback(name: AboutScreen._name, c: c),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text(
+    final c = SimulColors.of(context);
+    return _Glass(
+      c: c,
+      padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+      child: Column(children: [
+        const _GlowAvatar(),
+        const SizedBox(height: 18),
+        ShaderMask(
+          shaderCallback: (r) => const LinearGradient(
+            colors: [Color(0xFF7C8CFF), Color(0xFF4ADE80)],
+          ).createShader(r),
+          child: const Text(
             AboutScreen._name,
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: c.text,
-              fontSize: 23,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.5,
+              // Painted by the shader; kept white for the mask.
+              color: Colors.white,
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.3,
             ),
           ),
-          const SizedBox(height: 8),
-          Text(AboutScreen._field,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: c.faint, fontSize: 14, letterSpacing: 0.2)),
-          const SizedBox(height: 2),
-          Text(AboutScreen._school,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: c.subtle, fontSize: 13, letterSpacing: 0.2)),
+        ),
+        const SizedBox(height: 6),
+        Text(AboutScreen._field,
+            style: TextStyle(
+                color: c.text, fontSize: 14, fontWeight: FontWeight.w600)),
+        Text(AboutScreen._school,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: c.faint, fontSize: 12.5)),
+        const SizedBox(height: 18),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          alignment: WrapAlignment.center,
+          children: AboutScreen._skills
+              .map((sk) => _Chip(label: sk, c: c))
+              .toList(),
+        ),
+        const SizedBox(height: 22),
+        Divider(color: c.border, height: 1),
+        const SizedBox(height: 14),
+        ...AboutScreen._links.map((l) => _LinkButton(link: l, c: c)),
+      ]),
+    );
+  }
+}
+
+class _GlowAvatar extends StatelessWidget {
+  const _GlowAvatar();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = SimulColors.of(context);
+    return Container(
+      padding: const EdgeInsets.all(3.5),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF7C8CFF), Color(0xFF4ADE80)],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF7C8CFF).withValues(alpha: 0.35),
+            blurRadius: 34,
+            spreadRadius: 2,
+          ),
         ],
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(color: c.bg, shape: BoxShape.circle),
+        child: ClipOval(
+          child: SizedBox(
+            width: 108,
+            height: 108,
+            child: Image.asset(
+              AboutScreen._photo,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                color: c.card,
+                alignment: Alignment.center,
+                child: Text(
+                  AboutScreen._name.isNotEmpty ? AboutScreen._name[0] : '?',
+                  style: TextStyle(
+                      color: c.text,
+                      fontSize: 40,
+                      fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
 }
 
-class _AvatarFallback extends StatelessWidget {
-  final String name;
+// ── Right column: bio, app, footer ────────────────────────────────────────
+
+class _DetailColumn extends StatelessWidget {
   final SimulPalette c;
-  const _AvatarFallback({required this.name, required this.c});
+  const _DetailColumn({required this.c});
 
   @override
   Widget build(BuildContext context) {
-    // Rendered UNDER the image; only visible if the asset fails to load.
-    final initial = name.trim().isNotEmpty ? name.trim()[0].toUpperCase() : '?';
-    return Center(
-      child: Text(initial,
-          style: TextStyle(
-              color: c.subtle, fontSize: 44, fontWeight: FontWeight.w700)),
-    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _Glass(
+        c: c,
+        child: _Section(
+          c: c,
+          icon: Icons.person_outline_rounded,
+          title: 'About me',
+          body: AboutScreen._bio,
+        ),
+      ),
+      const SizedBox(height: 16),
+      _Glass(
+        c: c,
+        child: _Section(
+          c: c,
+          icon: Icons.play_circle_outline_rounded,
+          title: 'About SIMUL',
+          body: AboutScreen._appInfo,
+        ),
+      ),
+      const SizedBox(height: 16),
+      _Glass(
+        c: c,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        child: Row(children: [
+          Icon(Icons.favorite_rounded,
+              color: const Color(0xFFF472B6), size: 16),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Built with Flutter, Firebase & LiveKit · Open source (MIT)',
+              style: TextStyle(color: c.faint, fontSize: 12.5),
+            ),
+          ),
+          Text('© 2026', style: TextStyle(color: c.subtle, fontSize: 12)),
+        ]),
+      ),
+    ]);
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-class _SectionCard extends StatelessWidget {
+class _Section extends StatelessWidget {
   final SimulPalette c;
   final IconData icon;
-  final String label;
-  final String content;
-
-  const _SectionCard({
+  final String title;
+  final String body;
+  const _Section({
     required this.c,
     required this.icon,
-    required this.label,
-    required this.content,
+    required this.title,
+    required this.body,
   });
 
   @override
   Widget build(BuildContext context) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(colors: [
+              const Color(0xFF7C8CFF).withValues(alpha: 0.18),
+              const Color(0xFF4ADE80).withValues(alpha: 0.18),
+            ]),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: c.text, size: 16),
+        ),
+        const SizedBox(width: 12),
+        Text(title,
+            style: TextStyle(
+                color: c.text, fontSize: 15, fontWeight: FontWeight.w700)),
+      ]),
+      const SizedBox(height: 12),
+      Text(body,
+          style: TextStyle(color: c.faint, fontSize: 13.5, height: 1.65)),
+    ]);
+  }
+}
+
+// ── Reusable pieces ───────────────────────────────────────────────────────
+
+/// Soft glassy card. (True backdrop blur is intentionally avoided — it's
+/// expensive on low-end devices/web; a translucent fill + hairline border
+/// reads the same at a fraction of the cost.)
+class _Glass extends StatelessWidget {
+  final SimulPalette c;
+  final Widget child;
+  final EdgeInsets padding;
+  const _Glass({
+    required this.c,
+    required this.child,
+    this.padding = const EdgeInsets.all(22),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: padding,
       decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: c.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Container(
-              padding: const EdgeInsets.all(7),
-              decoration: BoxDecoration(
-                color: c.card,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(icon, color: c.faint, size: 16),
-            ),
-            const SizedBox(width: 10),
-            Text(label,
-                style: TextStyle(
-                    color: c.text,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.1)),
-          ]),
-          const SizedBox(height: 14),
-          Text(content,
-              style: TextStyle(color: c.faint, fontSize: 14, height: 1.65)),
+        color: dark
+            ? Colors.white.withValues(alpha: 0.045)
+            : Colors.white.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: dark
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.black.withValues(alpha: 0.06),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: dark ? 0.35 : 0.06),
+            blurRadius: 30,
+            offset: const Offset(0, 12),
+          ),
         ],
       ),
+      child: child,
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-class _LinksCard extends StatelessWidget {
+class _Chip extends StatelessWidget {
+  final String label;
   final SimulPalette c;
-  final List<_Link> links;
-  const _LinksCard({required this.c, required this.links});
+  const _Chip({required this.label, required this.c});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: c.card,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: c.border),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                color: c.faint, fontSize: 11.5, fontWeight: FontWeight.w600)),
+      );
+}
+
+class _LinkButton extends StatefulWidget {
+  final _Link link;
+  final SimulPalette c;
+  const _LinkButton({required this.link, required this.c});
+
+  @override
+  State<_LinkButton> createState() => _LinkButtonState();
+}
+
+class _LinkButtonState extends State<_LinkButton> {
+  bool _hover = false;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: c.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Container(
-              padding: const EdgeInsets.all(7),
-              decoration: BoxDecoration(
-                  color: c.card, borderRadius: BorderRadius.circular(8)),
-              child: Icon(Icons.link_rounded, color: c.faint, size: 16),
-            ),
-            const SizedBox(width: 10),
-            Text('Links',
-                style: TextStyle(
-                    color: c.text, fontSize: 14, fontWeight: FontWeight.w600)),
-          ]),
-          const SizedBox(height: 8),
-          ...links.map((l) => Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: () => launchUrl(Uri.parse(l.url),
-                      mode: LaunchMode.externalApplication),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 10, horizontal: 6),
-                    child: Row(children: [
-                      Icon(l.icon, color: c.subtle, size: 16),
-                      const SizedBox(width: 12),
-                      Text(l.label,
-                          style: TextStyle(
-                              color: c.faint,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500)),
-                      const Spacer(),
-                      Flexible(
-                        child: Text(l.value,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.right,
-                            style: TextStyle(
-                                color: c.accent,
-                                fontSize: 14,
-                                decoration: TextDecoration.underline,
-                                decorationColor:
-                                    c.accent.withValues(alpha: 0.35))),
-                      ),
-                      const SizedBox(width: 6),
-                      Icon(Icons.open_in_new_rounded,
-                          color: c.subtle, size: 13),
-                    ]),
+    final c = widget.c;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          decoration: BoxDecoration(
+            color: _hover ? c.card : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _hover ? c.accent : c.border),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => launchUrl(Uri.parse(widget.link.url),
+                  mode: LaunchMode.externalApplication),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                child: Row(children: [
+                  Icon(widget.link.icon, color: c.accent, size: 17),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(widget.link.label,
+                        style: TextStyle(
+                            color: c.text,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600)),
                   ),
-                ),
-              )),
-        ],
+                  Icon(Icons.arrow_outward_rounded, color: c.subtle, size: 15),
+                ]),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-class _Footer extends StatelessWidget {
-  final SimulPalette c;
-  final bool alignEnd;
-  const _Footer({required this.c, this.alignEnd = false});
+/// Ambient background glows.
+class _AmbientGlow extends StatelessWidget {
+  const _AmbientGlow();
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment:
-          alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.center,
-      children: [
-        Text('SIMUL · Version 1.1.0',
-            style: TextStyle(color: c.subtle, fontSize: 12)),
-        const SizedBox(height: 6),
-        Text('Made with care',
-            style: TextStyle(color: c.subtle, fontSize: 12)),
-      ],
+    return IgnorePointer(
+      child: Stack(children: [
+        Positioned(
+          top: -140,
+          left: -100,
+          child: _blob(const Color(0xFF7C8CFF), 380),
+        ),
+        Positioned(
+          bottom: -160,
+          right: -120,
+          child: _blob(const Color(0xFF4ADE80), 420),
+        ),
+      ]),
+    );
+  }
+
+  Widget _blob(Color color, double size) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(colors: [
+            color.withValues(alpha: 0.16),
+            color.withValues(alpha: 0.0),
+          ]),
+        ),
+      );
+}
+
+/// Simple fade + rise entrance for the whole page.
+class _Entrance extends StatelessWidget {
+  final Widget child;
+  const _Entrance({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 550),
+      curve: Curves.easeOutCubic,
+      builder: (context, t, child) => Opacity(
+        opacity: t,
+        child: Transform.translate(offset: Offset(0, 24 * (1 - t)), child: child),
+      ),
+      child: child,
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 class _ThemeToggle extends StatelessWidget {
-  final bool isDark;
-  final VoidCallback onTap;
-  const _ThemeToggle({required this.isDark, required this.onTap});
+  const _ThemeToggle();
 
   @override
   Widget build(BuildContext context) {
-    final c = SimulColors.of(context);
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return IconButton(
-      tooltip: isDark ? 'Switch to light mode' : 'Switch to dark mode',
-      icon: Icon(
-        isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
-        color: c.text,
-        size: 20,
-      ),
-      onPressed: onTap,
+      tooltip: dark ? 'Light mode' : 'Dark mode',
+      icon: Icon(dark ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
+      onPressed: () => context.read<ThemeController>().toggle(),
     );
   }
 }
@@ -412,7 +475,6 @@ class _ThemeToggle extends StatelessWidget {
 class _Link {
   final IconData icon;
   final String label;
-  final String value;
   final String url;
-  const _Link(this.icon, this.label, this.value, this.url);
+  const _Link(this.icon, this.label, this.url);
 }

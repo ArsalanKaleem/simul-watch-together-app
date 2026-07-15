@@ -146,8 +146,8 @@ class _Connect4ViewState extends State<_Connect4View> {
                 final label = canJoin
                     ? 'Tap any column to join as Player 2'
                     : (amPlayer
-                    ? (isMyTurn ? 'Your turn!' : 'Waiting…')
-                    : 'Spectating');
+                        ? (isMyTurn ? 'Your turn!' : 'Waiting…')
+                        : 'Spectating');
                 final color = (canJoin || isMyTurn)
                     ? SimulColors.success
                     : SimulColors.faint;
@@ -214,30 +214,30 @@ class _Connect4ViewState extends State<_Connect4View> {
                           child: Padding(
                             padding: const EdgeInsets.all(gap),
                             child: GestureDetector(
-                              // Anyone who could still take a seat (or is a
-                              // player whose turn it is) can tap. The service
-                              // auto-seats player 2 and enforces turns, so a
-                              // second person just taps a column to start
-                              // playing — no separate "join" step required.
-                              onTap: game.winner == 0 &&
-                                  ((amPlayer && isMyTurn) ||
-                                      (!amPlayer &&
-                                          game.player2Id == null))
-                                  ? () => game.dropPiece(
-                                  widget.roomId, myId, myName, col)
-                                  : null,
+                                // Anyone who could still take a seat (or is a
+                                // player whose turn it is) can tap. The service
+                                // auto-seats player 2 and enforces turns, so a
+                                // second person just taps a column to start
+                                // playing — no separate "join" step required.
+                                onTap: game.winner == 0 &&
+                                        ((amPlayer && isMyTurn) ||
+                                            (!amPlayer &&
+                                                game.player2Id == null))
+                                    ? () => game.dropPiece(
+                                        widget.roomId, myId, myName, col)
+                                    : null,
                               child: Container(
                                 decoration: BoxDecoration(
                                   color: _cellColor(cell0),
                                   shape: BoxShape.circle,
                                   boxShadow: cell0 != 0
                                       ? [
-                                    BoxShadow(
-                                      color: _cellColor(cell0)
-                                          .withValues(alpha: 0.5),
-                                      blurRadius: 6,
-                                    )
-                                  ]
+                                          BoxShadow(
+                                            color: _cellColor(cell0)
+                                                .withValues(alpha: 0.5),
+                                            blurRadius: 6,
+                                          )
+                                        ]
                                       : null,
                                 ),
                               ),

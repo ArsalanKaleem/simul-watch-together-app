@@ -105,7 +105,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _StatusBanner(configured: settings.isConfigured, c: c),
+                _StatusBanner(configured: settings.hasUserConfig, c: c),
                 const SizedBox(height: 16),
                 _SetupTutorial(c: c),
                 const SizedBox(height: 24),
@@ -426,12 +426,11 @@ class _SetupTutorialState extends State<_SetupTutorial> {
                     text: 'Paste all three into the fields below and press '
                         'Save. The banner above turns green when it worked.'),
                 _TutorialStep(c: c, n: '5',
-                    text: 'Send that same URL, Key and Secret to your '
-                        'friend privately, and have them paste those exact '
-                        'same three values into their own Settings. '
-                        'Important: both of you must use the SAME '
-                        'LiveKit project — voice and screen share only '
-                        'connect if you\'re pointed at the same one.'),
+                    text: 'That\'s it — your friend needs NO setup. When '
+                        'they join your room, SIMUL passes your LiveKit '
+                        'configuration to their device automatically, so '
+                        'voice and screen share just work. (If they\'ve '
+                        'entered their own settings, theirs are kept.)'),
 
                 const SizedBox(height: 14),
                 Container(

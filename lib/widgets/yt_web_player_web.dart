@@ -147,6 +147,8 @@ class _WebYtHandle implements YtWebHandle {
       case 101:
       case 150:
         _onMessage('fatal:noembed');
+      case 153:
+        _onMessage('fatal:config');
     }
   }
 
@@ -184,6 +186,11 @@ YtWebHandle? createYtWebPlayer({
         '?enablejsapi=1&autoplay=1&controls=1&rel=0&playsinline=1'
         '&iv_load_policy=3&origin=$origin';
     f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+    // YouTube's 2025 Required-Minimum-Functionality enforcement rejects
+    // embeds whose requests carry no referrer (Error 153). Browsers default
+    // to this policy anyway, but hosting pages/CDNs can override it — set it
+    // explicitly on the frame so the referrer always flows.
+    f.referrerPolicy = 'strict-origin-when-cross-origin';
     f.setAttribute('frameborder', '0');
     f.setAttribute('allowfullscreen', 'true');
     f.style.border = 'none';

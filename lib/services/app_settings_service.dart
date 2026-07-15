@@ -61,6 +61,29 @@ class AppSettingsService extends ChangeNotifier {
     return hasUrl && (canMintLocally || tokenUrl.isNotEmpty);
   }
 
+  /// True only when the USER has actually entered something — unlike
+  /// [isConfigured], which is effectively always true because the localhost
+  /// dev fallbacks satisfy it. Audit fix: the Settings status banner and the
+  /// room's auto-adopt logic both need to know "did a human configure this",
+  /// not "does some fallback exist".
+  bool get hasUserConfig =>
+      _url.isNotEmpty || _apiKey.isNotEmpty || _tokenUrl.isNotEmpty;
+
+  /// Adopts LiveKit credentials shared through a room document (the host
+  /// publishes theirs so joiners are configured automatically). Only applies
+  /// when this device has no user-entered config of its own, so it can never
+  /// overwrite someone's deliberate setup. Returns true if adopted.
+  Future<bool> adoptSharedConfig({
+    required String url,
+    required String apiKey,
+    required String apiSecret,
+  }) async {
+    if (hasUserConfig) return false;
+    if (url.isEmpty || apiKey.isEmpty || apiSecret.isEmpty) return false;
+    await save(url: url, apiKey: apiKey, apiSecret: apiSecret);
+    return true;
+  }
+
   Future<void> load() async {
     try {
       _url = (await _storage.read(key: _kUrl)) ?? '';

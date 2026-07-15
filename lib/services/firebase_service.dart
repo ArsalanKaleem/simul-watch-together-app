@@ -41,6 +41,11 @@ class FirebaseService extends ChangeNotifier {
   List<String> get participantIds   => _participantIds;
   List<String> get participantNames => _participantNames;
 
+  /// LiveKit credentials the host published into the room document so
+  /// joiners get configured automatically ({url, apiKey, apiSecret}).
+  Map<String, String>? _roomLiveKit;
+  Map<String, String>? get roomLiveKitConfig => _roomLiveKit;
+
   @override
   void dispose() {
     _roomSub?.cancel();
@@ -65,13 +70,14 @@ class FirebaseService extends ChangeNotifier {
       await _ensureAuth();
       final uid = _auth.currentUser!.uid;
 
-      String roomCode;
-      bool exists = true;
-      do {
-        roomCode = _generateRoomCode();
+      // Bounded retry (audit fix: the old unbounded do/while could spin
+      // forever). With 32^6 possible codes, one collision is already rare.
+      String roomCode = _generateRoomCode();
+      for (var attempt = 0; attempt < 5; attempt++) {
         final doc = await _db.collection('rooms').doc(roomCode).get();
-        exists = doc.exists;
-      } while (exists);
+        if (!doc.exists) break;
+        roomCode = _generateRoomCode();
+      }
 
       final user = AppUser(
         id: uid, name: userName, status: UserStatus.online,
@@ -130,6 +136,7 @@ class FirebaseService extends ChangeNotifier {
       final userNames = List<String>.from(data['userNames'] ?? []);
       final maxUsers  = (data['maxUsers'] as int?) ?? 20;
       final hostId    = data['hostId'] as String? ?? '';
+      _roomLiveKit    = _parseLiveKit(data['livekit']);
 
       // Capacity check (skip if user already in room)
       if (!userIds.contains(uid) && userIds.length >= maxUsers) {
@@ -143,13 +150,17 @@ class FirebaseService extends ChangeNotifier {
       await _db.collection('users').doc(uid).set(user.toMap());
 
       if (!userIds.contains(uid)) {
-        userIds.add(uid);
-        userNames.add(userName);
+        // Audit fix: read-modify-write of the arrays meant two people joining
+        // at the same moment could overwrite each other (lost update).
+        // arrayUnion is atomic server-side and still satisfies the
+        // self-join security rule.
         await roomRef.update({
-          'userIds'  : userIds,
-          'userNames': userNames,
+          'userIds'  : FieldValue.arrayUnion([uid]),
+          'userNames': FieldValue.arrayUnion([userName]),
           'updatedAt': FieldValue.serverTimestamp(),
         });
+        userIds.add(uid);
+        userNames.add(userName);
         await _logActivity(normalized, ActivityType.userJoined, '$userName joined the room');
       }
 
@@ -185,9 +196,39 @@ class FirebaseService extends ChangeNotifier {
         _moderatorIds    = List<String>.from(data['moderatorIds'] ?? []);
         _participantIds  = List<String>.from(data['userIds']      ?? []);
         _participantNames = List<String>.from(data['userNames']   ?? []);
+        _roomLiveKit     = _parseLiveKit(data['livekit']);
       }
     }
     _listenToRoom(roomId);
+  }
+
+  Map<String, String>? _parseLiveKit(dynamic raw) {
+    if (raw is! Map) return null;
+    final url    = raw['url'];
+    final key    = raw['apiKey'];
+    final secret = raw['apiSecret'];
+    if (url is String && key is String && secret is String &&
+        url.isNotEmpty && key.isNotEmpty && secret.isNotEmpty) {
+      return {'url': url, 'apiKey': key, 'apiSecret': secret};
+    }
+    return null;
+  }
+
+  /// Host publishes their LiveKit credentials into the room doc so joiners
+  /// are configured automatically. Merge-write; never throws.
+  ///
+  /// SECURITY NOTE: anyone authenticated who knows the room code can read
+  /// these. Acceptable for a friends-and-family app where sharing the code
+  /// already implies trust — documented in docs/SECURITY_NOTES.md.
+  Future<void> publishLiveKitConfig(
+      String roomId, String url, String apiKey, String apiSecret) async {
+    try {
+      await _db.collection('rooms').doc(roomId).set({
+        'livekit': {'url': url, 'apiKey': apiKey, 'apiSecret': apiSecret},
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('publishLiveKitConfig failed: $e');
+    }
   }
 
   void _listenToRoom(String roomId) {
@@ -202,6 +243,7 @@ class FirebaseService extends ChangeNotifier {
       _isHost           = data['hostId'] == uid;
       _hostId           = data['hostId'] as String?;
       _moderatorIds     = List<String>.from(data['moderatorIds'] ?? []);
+      _roomLiveKit      = _parseLiveKit(data['livekit']) ?? _roomLiveKit;
 
       if (_currentUser != null && _participantIds.length >= 2) {
         final pid = _participantIds.firstWhere(

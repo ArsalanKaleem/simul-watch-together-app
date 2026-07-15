@@ -10,6 +10,8 @@ import '../utils/constants.dart';
 // never pulled into a non-web build.
 import 'yt_web_player_stub.dart'
     if (dart.library.js_interop) 'yt_web_player_web.dart';
+import 'player_file_host_stub.dart'
+    if (dart.library.io) 'player_file_host_io.dart';
 import 'yt_web_player_stub.dart' show YtWebHandle;
 
 /// SIMUL Video Player — true cross-platform inline playback.
@@ -133,7 +135,11 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
           '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')
       ..addJavaScriptChannel('FlutterBridge',
           onMessageReceived: (m) => _handleMessage(m.message))
-      ..loadHtmlString(_buildHtml(widget.videoId, windows: false));
+      // baseUrl gives this in-memory document a real https origin. Without
+      // it the origin is opaque, the embed request carries NO referrer, and
+      // YouTube's 2025 enforcement answers with Error 153.
+      ..loadHtmlString(_buildHtml(widget.videoId, windows: false),
+          baseUrl: 'https://www.youtube-nocookie.com');
     _ctrl = ctrl;
     _armReadyTimeout();
   }
@@ -147,7 +153,17 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       });
       await c.setBackgroundColor(Colors.black);
       await c.setPopupWindowPolicy(win.WebviewPopupWindowPolicy.deny);
-      await c.loadStringContent(_buildHtml(widget.videoId, windows: true));
+      final html = _buildHtml(widget.videoId, windows: true);
+      // webview_windows has no baseUrl equivalent, so an in-memory string
+      // can never send a referrer → guaranteed Error 153. Loading the same
+      // page from a real file:// URL (with the referrer meta tag) is the
+      // community-verified fix. String load kept as a last resort.
+      final fileUrl = await writePlayerHtmlToFile(html);
+      if (fileUrl != null) {
+        await c.loadUrl(fileUrl);
+      } else {
+        await c.loadStringContent(html);
+      }
       _winCtrl = c;
       if (mounted) setState(() {});
       _armReadyTimeout();
@@ -182,9 +198,19 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     final html = _buildHtml(widget.videoId,
         windows: _engine == _Engine.windowsWebView);
     if (_engine == _Engine.flutterWebView) {
-      _ctrl?.loadHtmlString(html);
+      _ctrl?.loadHtmlString(html, baseUrl: 'https://www.youtube-nocookie.com');
     } else if (_engine == _Engine.windowsWebView) {
-      _winCtrl?.loadStringContent(html);
+      final win = _winCtrl;
+      if (win != null) {
+        writePlayerHtmlToFile(html).then((fileUrl) {
+          if (!mounted) return;
+          if (fileUrl != null) {
+            win.loadUrl(fileUrl);
+          } else {
+            win.loadStringContent(html);
+          }
+        });
+      }
     }
   }
 
@@ -237,6 +263,8 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
         'noembed'  => 'The video owner has disabled playback outside YouTube.',
         'notfound' => 'This video is unavailable (removed, private, or region-locked).',
         'badid'    => "That link doesn't point to a valid YouTube video.",
+        'config'   => 'YouTube rejected the player (error 153). Try another '
+            'video; if every video fails, update SIMUL.',
         _          => 'This video could not be played after several attempts.',
       };
       _readyTimeout?.cancel();
@@ -271,6 +299,7 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
 <html>
 <head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <style>
   * { margin:0; padding:0; box-sizing:border-box }
   body { background:#000; overflow:hidden; width:100vw; height:100vh }
@@ -373,8 +402,9 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       setTimeout(buildPlayer, 350);
     } else {
       // All sources exhausted. 101/150 = embedding disabled by owner.
-      post((code === 101 || code === 150)
-          ? 'fatal:noembed' : 'fatal:unknown');
+      if (code === 101 || code === 150) { post('fatal:noembed'); }
+      else if (code === 153)             { post('fatal:config'); }
+      else                               { post('fatal:unknown'); }
     }
   }
 

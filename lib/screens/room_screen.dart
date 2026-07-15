@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../utils/constants.dart';
 import '../services/firebase_service.dart';
 import '../services/livekit_service.dart';
+import '../services/app_settings_service.dart';
 import '../services/theme_controller.dart';
 import '../services/youtube_sync_service.dart';
 import '../widgets/video_player_widget.dart';
@@ -75,6 +77,39 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
       return;
     }
 
+    // Phase 1.5: LiveKit credential exchange through the room document.
+    //  - Host with their own config → publish it into the room doc so every
+    //    joiner is configured automatically.
+    //  - Joiner without their own config → adopt what the host published.
+    //    Must happen BEFORE lk.connect below, or the first connect would
+    //    still use the empty/default settings.
+    try {
+      final settings = context.read<AppSettingsService>();
+      if (fb.isHost && settings.canMintLocally) {
+        await fb.publishLiveKitConfig(
+          widget.roomId,
+          settings.liveKitUrl,
+          settings.apiKey,
+          settings.apiSecret,
+        );
+      } else if (!fb.isHost && !settings.hasUserConfig) {
+        final shared = fb.roomLiveKitConfig;
+        if (shared != null) {
+          final adopted = await settings.adoptSharedConfig(
+            url: shared['url']!,
+            apiKey: shared['apiKey']!,
+            apiSecret: shared['apiSecret']!,
+          );
+          if (adopted && mounted) {
+            _snack('Voice & screen share configured automatically '
+                'from the host. 🎉');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('LiveKit credential exchange failed: $e');
+    }
+
     // Phase 2: LiveKit (voice + screen share). This failing should NOT kill
     // the room — video sync and chat still work — so degrade gracefully and
     // tell the person what to do.
@@ -128,6 +163,10 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
             _videoKey.currentState?.syncTo(pos, false);
           case 'seek':
             _videoKey.currentState?.seekTo(pos);
+          case 'link':
+            final url = state['url'] as String?;
+            final by  = state['byName'] as String? ?? 'Someone';
+            if (url != null && url.isNotEmpty) _showSharedLink(url, by);
           case 'sync':
             final vs = _videoKey.currentState;
             if (vs != null && (vs.currentPosition - pos).abs() > 3.0) {
@@ -176,7 +215,16 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
     if (url.isEmpty) return;
     final id = _extractYouTubeId(url);
     if (id == null) {
-      _snack('Could not recognise a YouTube URL', isError: true);
+      // Not YouTube — if it's still a valid web link, share it with the room
+      // instead of rejecting it (websites can't be embedded cross-origin,
+      // but everyone can open the same page).
+      if (_isWebUrl(url)) {
+        FocusManager.instance.primaryFocus?.unfocus();
+        source.clear();
+        _shareLink(url);
+        return;
+      }
+      _snack('That doesn\'t look like a valid link', isError: true);
       return;
     }
     // The URL field lives in a subtree that is about to be torn down (the
@@ -186,6 +234,19 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
     FocusManager.instance.primaryFocus?.unfocus();
     source.clear();
     _loadVideo(id, 'YouTube Video');
+  }
+
+  bool _isWebUrl(String input) {
+    final uri = Uri.tryParse(input);
+    return uri != null &&
+        (uri.scheme == 'http' || uri.scheme == 'https') &&
+        uri.host.contains('.');
+  }
+
+  void _shareLink(String url) {
+    context.read<YouTubeSyncService>().sendLinkShared(
+        widget.roomId, _myUserId, url, widget.userName);
+    _showSharedLink(url, 'You'); // show the sender the same prompt
   }
 
   /// Extracts a YouTube video ID from any common URL format.
@@ -255,8 +316,8 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
                   fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
           const Text(
-            'Tab sharing needs a desktop browser — on your phone, paste a '
-            'YouTube link instead and it plays for everyone, in sync.',
+            'Paste any link. YouTube plays for everyone in sync; any other '
+            'website is shared so the whole room can open it.',
             textAlign: TextAlign.center,
             style: TextStyle(
                 color: SimulColors.faint, fontSize: 12, height: 1.4),
@@ -310,13 +371,16 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
                 Navigator.pop(ctx);
                 if (url.isEmpty) return;
                 final id = _extractYouTubeId(url);
-                if (id == null) {
-                  _snack('Could not recognise a YouTube URL', isError: true);
-                  return;
+                if (id != null) {
+                  _loadVideo(id, 'YouTube Video');
+                } else if (_isWebUrl(url)) {
+                  _shareLink(url);
+                } else {
+                  _snack('That doesn\'t look like a valid link',
+                      isError: true);
                 }
-                _loadVideo(id, 'YouTube Video');
               },
-              child: const Text('Play for everyone'),
+              child: const Text('Share with everyone'),
             ),
           ),
         ]),
@@ -508,6 +572,39 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
     } else {
       setState(fn);
     }
+  }
+
+  /// A room member shared a non-YouTube link (mobile "share by link").
+  /// Nothing can be force-embedded cross-site, so present it as an
+  /// open-in-browser prompt instead.
+  void _showSharedLink(String url, String byName) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(
+        duration: const Duration(seconds: 12),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: SimulColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: SimulColors.border),
+        ),
+        content: Row(children: [
+          const Icon(Icons.link_rounded, color: SimulColors.info, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text('$byName shared a link',
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: SimulColors.white)),
+          ),
+        ]),
+        action: SnackBarAction(
+          label: 'OPEN',
+          textColor: SimulColors.info,
+          onPressed: () => launchUrl(Uri.parse(url),
+              mode: LaunchMode.externalApplication),
+        ),
+      ));
   }
 
   void _snack(String msg, {bool isError = false}) {

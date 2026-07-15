@@ -90,7 +90,7 @@ class SimulApp extends StatelessWidget {
         ChangeNotifierProxyProvider<AppSettingsService, LiveKitService>(
           create: (_) => LiveKitService()..attachSettings(settings),
           update: (_, s, previous) =>
-          (previous ?? LiveKitService())..attachSettings(s),
+              (previous ?? LiveKitService())..attachSettings(s),
         ),
         ChangeNotifierProvider(create: (_) => YouTubeSyncService()),
       ],
@@ -103,19 +103,19 @@ class SimulApp extends StatelessWidget {
           SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
             statusBarColor: Colors.transparent,
             statusBarIconBrightness:
-            isDark ? Brightness.light : Brightness.dark,
+                isDark ? Brightness.light : Brightness.dark,
             systemNavigationBarColor:
-            isDark ? SimulPalette.dark.bg : SimulPalette.light.bg,
+                isDark ? SimulPalette.dark.bg : SimulPalette.light.bg,
             systemNavigationBarIconBrightness:
-            isDark ? Brightness.light : Brightness.dark,
+                isDark ? Brightness.light : Brightness.dark,
           ));
 
           TextTheme applyFont(ThemeData t) => GoogleFonts.interTextTheme(
-            t.textTheme,
-          ).apply(
-            bodyColor: t.colorScheme.onSurface,
-            displayColor: t.colorScheme.onSurface,
-          );
+                t.textTheme,
+              ).apply(
+                bodyColor: t.colorScheme.onSurface,
+                displayColor: t.colorScheme.onSurface,
+              );
 
           return MaterialApp(
             title: 'SIMUL',

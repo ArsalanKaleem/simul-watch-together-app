@@ -70,16 +70,35 @@ class YouTubeSyncService extends ChangeNotifier {
 
   Future<void> _send(
       String roomId, String senderId, Map<String, dynamic> payload) async {
-    await _db
-        .collection('rooms')
-        .doc(roomId)
-        .collection('videoSync')
-        .add({
-      ...payload,
-      'senderId' : senderId,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
+    try {
+      await _db
+          .collection('rooms')
+          .doc(roomId)
+          .collection('videoSync')
+          .add({
+        ...payload,
+        'senderId' : senderId,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      // Audit fix: sync writes fired from play/pause/seek callbacks were
+      // unguarded — offline, every interaction threw an unhandled async
+      // error. Sync events are fire-and-forget by nature; the periodic
+      // position sync self-heals once the connection returns.
+      debugPrint('[Sync] send failed (${payload['action']}): $e');
+    }
   }
+
+  /// Shares an arbitrary web link with the room (mobile "share by link" for
+  /// non-YouTube URLs). Receivers show an "open link" prompt — nothing is
+  /// embedded, so this works for any site.
+  Future<void> sendLinkShared(
+          String roomId, String senderId, String url, String byName) =>
+      _send(roomId, senderId, {
+        'action': 'link',
+        'url'   : url,
+        'byName': byName,
+      });
 
   Future<void> sendVideoLoaded(
           String roomId, String senderId, String videoId, {String title = ''}) =>
