@@ -22,7 +22,7 @@ class AboutScreen extends StatelessWidget {
   static const String _photo  = 'lib/assets/me.png';
 
   static const String _bio =
-      'Computer Science student and Flutter developer who enjoys building '
+      ' AI Engineer and Flutter developer who enjoys building '
       'real-time, cross-platform experiences. SIMUL grew out of wanting to '
       'watch videos with friends without juggling three different apps — '
       'so I built one room that does it all.';
