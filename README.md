@@ -6,12 +6,18 @@
 
 ### Watch together, in sync.
 
-A cross-platform Flutter app to watch YouTube in perfect sync with friends — with voice chat, screen sharing (audio included), live reactions, and a quick game of Connect 4, all in one shared room.
+**One room. Every platform. Zero setup for your friends.**
+Synced YouTube playback, voice chat, screen sharing with audio, live reactions, and Connect 4 — without the "3, 2, 1, play!" countdown.
+
+<br/>
+
+[![Live Demo](https://img.shields.io/badge/🌐_Live_Demo-simul--deskweb--app.web.app-000000?style=for-the-badge)](https://simul-deskweb-app.web.app/)
 
 <br/>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?style=flat-square&logo=flutter&logoColor=white)](https://flutter.dev)
+[![Dart](https://img.shields.io/badge/Dart-3.3+-0175C2?style=flat-square&logo=dart&logoColor=white)](https://dart.dev)
 [![Firebase](https://img.shields.io/badge/Firebase-FFCA28?style=flat-square&logo=firebase&logoColor=black)](https://firebase.google.com)
 [![LiveKit](https://img.shields.io/badge/LiveKit-WebRTC-0F172A?style=flat-square&logo=webrtc&logoColor=white)](https://livekit.io)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
@@ -19,10 +25,11 @@ A cross-platform Flutter app to watch YouTube in perfect sync with friends — w
 [![CI](https://github.com/ArsalanKaleem/simul-watch-together-app/actions/workflows/flutter-ci.yml/badge.svg)](https://github.com/ArsalanKaleem/simul-watch-together-app/actions/workflows/flutter-ci.yml)
 [![Platforms](https://img.shields.io/badge/platform-web%20%7C%20android%20%7C%20ios%20%7C%20windows%20%7C%20macos%20%7C%20linux-informational?style=flat-square)](#-platform-support)
 [![Stars](https://img.shields.io/github/stars/ArsalanKaleem/simul-watch-together-app?style=flat-square)](https://github.com/ArsalanKaleem/simul-watch-together-app/stargazers)
+[![Downloads](https://img.shields.io/github/downloads/ArsalanKaleem/simul-watch-together-app/total?style=flat-square)](https://github.com/ArsalanKaleem/simul-watch-together-app/releases)
 
 <br/>
 
-[**Features**](#-features) · [**Screenshots**](#-screenshots) · [**Quick Start**](#-quick-start) · [**Usage**](#-usage-guide) · [**Configuration**](#%EF%B8%8F-configuration) · [**Contributing**](#-contributing) · [**Author**](#-author)
+[**Why SIMUL**](#-why-simul) · [**Features**](#-features) · [**Screenshots**](#-screenshots) · [**Try it now**](#-try-it-right-now) · [**Get LiveKit keys**](#-getting-your-livekit-keys-5-minutes) · [**Tech Stack**](#-tech-stack) · [**Architecture**](#-architecture--security) · [**Downloads**](#-downloads) · [**Limitations**](#%EF%B8%8F-honest-limitations) · [**Contributing**](#-contributing)
 
 </div>
 
@@ -30,23 +37,39 @@ A cross-platform Flutter app to watch YouTube in perfect sync with friends — w
 
 ## 📖 About
 
-**SIMUL** turns solo watching into a shared experience. Create a room, send a friend the code, and everything stays in sync — when one person pauses, everyone pauses. Add your voice, share a tab (with sound), drop reactions, and settle who's right with a game of Connect 4, without ever leaving the room.
+Watching something "together" with friends usually means three separate apps and someone counting down *"3… 2… 1… play!"* over Discord. **SIMUL** is one room that does all of it: the video stays in sync automatically, you can talk over it, share your screen with sound, react live, and settle an argument with a game of Connect 4 — without ever leaving the room.
 
-It's fully cross-platform from a single Flutter codebase, uses **Firebase** for rooms/chat/sync and **LiveKit** for real-time voice and screen sharing, and is **open source** under the MIT license.
+Built as a single Flutter codebase running natively on **six platforms**, backed by Firebase and LiveKit, and released under the **MIT license**.
+
+---
+
+## 🌟 Why SIMUL
+
+| | |
+|---|---|
+| 🆓 **No signup friction** | Anonymous auth — creating or joining a room takes seconds, no account required |
+| 🔗 **Zero-setup joining** | Configure LiveKit once as the host; everyone who joins your room gets voice & screen share automatically — they never touch a settings screen |
+| 📱 **Actually cross-platform** | Not a wrapped website — native builds for Web, Android, iOS, Windows, macOS, and Linux from one codebase |
+| 🎯 **Built for the whole session, not just the video** | Voice, chat, reactions, and a game live *inside* the room — no tab-switching to Discord and back |
+| 🔓 **Open source, MIT licensed** | Read every line, self-host it, fork it, ship your own version |
+| 🛠️ **Actively hardened** | Not a weekend prototype — race conditions, Firestore security rules, and platform-specific playback bugs have been found and fixed with documented reasoning (see [CHANGELOG.md](CHANGELOG.md))|
 
 ---
 
 ## ✨ Features
 
-- 🎬 **Synced YouTube playback** — play, pause, and seek stay in sync for everyone in the room
-- 🖥️ **Screen sharing with audio** — share a browser tab or your desktop, *with sound*
-- 🔊 **Live voice chat** — talk over LiveKit while you watch
-- 🔇 **Per-viewer audio control** — each viewer can mute shared audio locally, without affecting anyone else
-- 💬 **Live chat & reactions** — a floating chat panel plus animated emoji reactions
-- 🎮 **Connect 4** — tap a column to join and play, no separate step
-- 🌗 **Light / dark mode** — theme engine and toggle built in
-- 🔐 **In-app setup** — paste your own LiveKit keys in Settings; stored securely on-device, tokens minted locally (no server required)
-- 📱 **Truly cross-platform** — Web, Windows, macOS, Linux, Android & iOS
+| | Feature | Details |
+|---|---|---|
+| 🎬 | **Synced YouTube playback** | Play, pause, and seek stay in sync for everyone — converges within ~1 second |
+| 🖥️ | **Screen sharing with audio** | Share a browser tab *with sound* (desktop/web) |
+| 🔗 | **Share any website link** | Paste a non-YouTube URL and the whole room gets an "open" prompt |
+| 🔊 | **Live voice chat** | LiveKit-powered WebRTC audio |
+| 🔇 | **Per-viewer audio control** | Mute someone's shared audio just for you, without affecting anyone else |
+| 💬 | **Chat & reactions** | Floating chat panel with replies and an unread badge, plus animated emoji reactions |
+| 🎮 | **Connect 4** | Tap any column to join and play — no separate "join game" step |
+| 🌗 | **Light / dark mode** | Theme engine with a one-tap toggle |
+| 🔐 | **Zero-setup joining** | Host's LiveKit config is shared automatically; credentials are hidden from the joiner's UI |
+| 📱 | **Cross-platform** | Web, Android, iOS, Windows, macOS, Linux — one codebase |
 
 ---
 
@@ -58,7 +81,7 @@ It's fully cross-platform from a single Flutter codebase, uses **Firebase** for 
 <tr>
 <td align="center">
 <img src="docs/screenshots/auth-screen.png" width="260"/><br/>
-<b>Authentication</b>
+<b>Home</b>
 </td>
 <td align="center">
 <img src="docs/screenshots/room-screen.png" width="260"/><br/>
@@ -81,24 +104,73 @@ It's fully cross-platform from a single Flutter codebase, uses **Firebase** for 
 
 ---
 
-## 🧱 Tech Stack
+## 🚀 Try it right now
 
-| Layer | Technology |
-|---|---|
-| **Framework** | [Flutter](https://flutter.dev) (Dart) |
-| **Backend** | [Firebase](https://firebase.google.com) — Auth + Cloud Firestore (rooms, chat, presence, sync, game) |
-| **Real-time media** | [LiveKit](https://livekit.io) — WebRTC voice + screen share |
-| **State management** | [provider](https://pub.dev/packages/provider) |
-| **Secure storage** | [flutter_secure_storage](https://pub.dev/packages/flutter_secure_storage) |
+No install needed — the web build is live:
+
+### **[👉 simul-deskweb-app.web.app](https://simul-deskweb-app.web.app/)**
+
+Open it in two tabs (or send the link to a friend), create a room in one, join with the code in the other. Firebase is already configured — you're in a shared room in seconds. Voice and screen sharing need a LiveKit project, which takes about five minutes to set up (below) — or grab the mobile/desktop build straight from [**Releases**](https://github.com/ArsalanKaleem/simul-watch-together-app/releases).
 
 ---
 
-## 🗺️ Architecture
+## 🔑 Getting your LiveKit keys (5 minutes)
 
-Two backends, handled differently:
+LiveKit powers voice chat and screen sharing. Firebase (rooms, chat, sync, the game) is already configured for you — **LiveKit is the only thing you set up**, and you only do it once as the host; anyone who joins your room inherits it automatically.
 
-- **Firebase** powers rooms, chat, presence, sync state, and Connect 4 — it comes preconfigured.
-- **LiveKit** powers voice and screen share — each user supplies **their own** project via the in-app **Settings** screen. The app mints its own join tokens on-device, so there's **no token server to deploy**.
+1. **Create a free account** at **[cloud.livekit.io](https://cloud.livekit.io)** — no credit card required.
+2. Click **Create Project**, give it any name (e.g. "simul").
+3. In your new project, go to **Settings → Keys** → **Create Key**.
+4. Copy the **API Key** and the **API Secret** — the secret is shown **once**, so copy it now.
+5. Back on the project overview, copy your **WebSocket URL** — it looks like `wss://your-project-name.livekit.cloud`.
+6. Open SIMUL → tap **⚙️ Settings** → paste in the **URL**, **API Key**, and **API Secret** → **Save**.
+
+That's it. Create a room — anyone who joins gets voice and screen sharing automatically, with no setup on their end.
+
+<details>
+<summary><strong>What if I don't want to make my own LiveKit project?</strong></summary>
+
+You don't have to — you only need one if you're **hosting** a room. If you're just **joining** someone else's room, you need nothing at all; their configuration is passed to you automatically the moment you join.
+</details>
+
+<details>
+<summary><strong>LiveKit's free tier — what does it actually give you?</strong></summary>
+
+The free **Build** plan includes roughly **5,000 participant-minutes** and **50 GB** of data transfer per month, no card required. In practice that's about **~40 hours/month of 2-person sessions** — voice-only sessions are minute-bound, screen-sharing sessions are bandwidth-bound, and both land in roughly the same range. More participants or higher quality reduces this proportionally. See [livekit.com/pricing](https://livekit.com/pricing) for current numbers.
+</details>
+
+---
+
+## 🧱 Tech Stack
+
+### Core
+| Layer | Technology | Why |
+|---|---|---|
+| **UI framework** | [Flutter](https://flutter.dev) 3.x / [Dart](https://dart.dev) 3.3+ | One codebase, six platforms |
+| **State management** | [provider](https://pub.dev/packages/provider) | `ChangeNotifier` services + `ProxyProvider` |
+| **Realtime database** | [Cloud Firestore](https://firebase.google.com/docs/firestore) | Rooms, chat, presence, sync, game state |
+| **Auth** | [Firebase Auth](https://firebase.google.com/docs/auth) (anonymous) | Zero signup friction |
+| **Voice & screen share** | [LiveKit](https://livekit.io) (WebRTC SFU) | Scales past a peer-to-peer mesh |
+| **Secure storage** | [flutter_secure_storage](https://pub.dev/packages/flutter_secure_storage) | Keychain / Keystore for credentials |
+| **Token minting** | [crypto](https://pub.dev/packages/crypto) (HS256 JWT) | On-device — no token server required by default |
+
+### Video playback — a genuinely different engine per platform
+YouTube's late-2025 embed enforcement (Error 153) requires every request to carry a real referrer. An in-memory/off-screen document has none, so each platform needed its own fix:
+
+| Platform | Engine | Fix applied |
+|---|---|---|
+| **Web** | `<iframe>` via `HtmlElementView` + `postMessage` | `webview_flutter` has no web implementation at all — the player is a real iframe hosted in the page, with `referrerPolicy` set *before* `src` is assigned |
+| **Android / iOS / macOS** | [webview_flutter](https://pub.dev/packages/webview_flutter) | `baseUrl` gives the in-memory page a real HTTPS origin, so a referrer is actually sent |
+| **Windows** | [webview_windows](https://pub.dev/packages/webview_windows) (WebView2) | Served from a real **loopback HTTP server** — a `file://` URL still sends no referrer, so a `127.0.0.1` server was the only reliable fix |
+
+### Supporting
+`google_fonts` · `url_launcher` · `http` · `web` · `dart:js_interop` / `dart:ui_web`
+
+---
+
+## 🗺️ Architecture & Security
+
+Two backends, deliberately handled very differently:
 
 ```
 ┌────────────┐   Firebase (preconfigured)   ┌──────────────┐
@@ -106,91 +178,79 @@ Two backends, handled differently:
 └─────┬──────┘   rooms · chat · sync · game   └──────────────┘
       │
       │ voice + screen share
-      │ token minted on-device from keys pasted in Settings
+      │ token minted on-device from keys shared by the host
       ▼
-  YOUR LiveKit project (wss://…livekit.cloud)
+  HOST's LiveKit project (wss://…livekit.cloud)
 ```
+
+**LiveKit credential sharing — how it's actually protected:** the host's URL/key/secret live in `rooms/{id}/private/config`, a **separate document** from the room itself, gated by Firestore rules:
+
+```
+match /private/{docId} {
+  allow read:  if isMember() || isHost();   // room members + host only
+  allow write: if isHost();                 // only the host can set it
+}
+```
+
+This matters because Firestore rules are **document-level, not field-level** — putting the secret directly on the room document would make it readable by anyone who can read the room, i.e. anyone with the room code. The private subcollection blocks strangers and room-code guessers. Adopted credentials are also **hidden in the joiner's Settings UI** — shown only as *"Provided by the room host."*
+
+**What this does *not* protect against** (stated plainly, not buried): a genuine room **member** can still extract the secret, since their client must be able to read it to connect. Closing that gap fully requires minting short-lived tokens server-side instead of sharing the raw secret — see [Limitations](#%EF%B8%8F-honest-limitations) below.
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start (running it yourself)
 
 ### Prerequisites
 - [Flutter SDK](https://docs.flutter.dev/get-started/install) (stable channel)
-- A free [LiveKit Cloud](https://cloud.livekit.io) account — no credit card required
+- A free [LiveKit Cloud](https://cloud.livekit.io) account (see the [5-minute tutorial](#-getting-your-livekit-keys-5-minutes) above)
 
 ### 1. Clone & install
 ```bash
 git clone https://github.com/ArsalanKaleem/simul-watch-together-app.git
 cd simul-watch-together-app
-```
-Add two dependencies to `pubspec.yaml` (also in [`pubspec.additions.yaml`](pubspec.additions.yaml)):
-```yaml
-dependencies:
-  flutter_secure_storage: ^9.2.2
-  crypto: ^3.0.5
-```
-Then:
-```bash
 flutter pub get
-flutter run -d chrome     # or windows / macos / linux / a device
 ```
 
-### 2. Connect your LiveKit project
-1. Create a free project at **[cloud.livekit.io](https://cloud.livekit.io)**.
-2. **Settings → Keys** → create an API Key (copy the key + secret shown once).
-3. Copy your project URL — `wss://your-project.livekit.cloud`.
-4. In the app: tap **⚙️ Settings** → paste **URL**, **API Key**, **API Secret** → **Save**.
+### 2. Platform permissions (required for microphone access)
+Mic access is an OS permission that Dart can't grant on its own — see [`docs/PLATFORM_SETUP.md`](docs/PLATFORM_SETUP.md) for the exact `AndroidManifest.xml` / `Info.plist` entries before testing voice on a phone.
 
-You're live. Create a room, share the code, and start watching together. 🎉
+### 3. Run
+```bash
+flutter run -d chrome     # or windows / macos / your device
+```
+
+### 4. Connect LiveKit
+In the app: **⚙️ Settings** → paste your URL / Key / Secret → **Save**. Full walkthrough in the [tutorial above](#-getting-your-livekit-keys-5-minutes).
 
 ---
 
 ## 📖 Usage Guide
 
-### Create or join a room
-- **Create:** Home → *Create Room* → enter your name → copy the 6-character code that appears.
-- **Join:** Home → *Join Room* → enter your name and the room code.
-
-### In a room
 | Action | How |
 |---|---|
+| Create / join a room | Home screen — *Create Room* or *Join Room* with the 6-character code |
 | Load a video | Paste a YouTube URL into the bar under the player |
-| Voice chat | Tap the 🎤 mic icon in the top bar |
-| Share screen | Tap 🖥️ (desktop) or **drawer → Share Screen** (mobile). Pick a **tab** and tick **"Share tab audio"** for sound |
+| Share any website | Paste a non-YouTube link — everyone gets an "open" prompt |
+| Voice chat | Tap the 🎤 icon in the top bar |
+| Share screen | 🖥️ (desktop) — pick a **tab** and tick **"Share tab audio"** for sound |
+| Share on mobile | Drawer → *Share a Video Link* |
 | Mute shared audio (just you) | Tap the speaker icon on the share view |
 | Chat | Tap the floating chat bubble, bottom-right |
-| React | Use the reaction bar (toggle from the drawer) |
-| Play Connect 4 | Open **Games** → **Start** → tap any column to join |
-| Invite others | Drawer (≡) → **Invite to Room** |
-| Switch theme | Drawer → **Light/Dark Mode**, or from Settings |
-| Leave | Back arrow, top-left |
+| React | Reaction bar (toggle from the drawer) |
+| Play Connect 4 | **Games** → *Start* → tap any column to join |
+| Switch theme | Drawer → *Light/Dark Mode* |
 
 ---
 
-## ⚙️ Configuration
+## 📦 Downloads
 
-| What | Where | Who sets it |
-|---|---|---|
-| Firebase | `lib/firebase_options.dart` | Maintainer (preconfigured) |
-| LiveKit URL / key / secret | **In-app Settings** → secure storage | **Each user** |
-| Token server (optional) | `token-server/.env` + Settings → Advanced | Advanced users |
-| Firestore rules | `firestore.rules` | `firebase deploy --only firestore:rules` |
+Prebuilt binaries are attached to **[GitHub Releases](https://github.com/ArsalanKaleem/simul-watch-together-app/releases)**:
 
-<details>
-<summary><strong>Local development (no cloud)</strong></summary>
+- **Android** — `.apk`, direct install (enable "install from unknown sources")
+- **Windows** — `simul-setup.exe`, a proper installer with Start Menu shortcuts
+- **Web** — no download needed, just open [simul-deskweb-app.web.app](https://simul-deskweb-app.web.app/)
 
-```bash
-livekit-server --dev   # ws://localhost:7880, key=devkey secret=secret
-```
-In Settings, enter URL `ws://localhost:7880`, Key `devkey`, Secret `secret`.
-</details>
-
-<details>
-<summary><strong>LiveKit free tier</strong></summary>
-
-The free **Build** plan (no card) offers ~5,000 participant-minutes and ~50 GB/month — roughly **~40 hours/month of 2-person sessions**. See [livekit.com/pricing](https://livekit.com/pricing) for current numbers.
-</details>
+> ⚠️ These builds are **unsigned**. Android will warn about an unknown source, and Windows SmartScreen may flag the installer as unrecognized — this is expected for an independently published open-source app, not a sign of tampering. Build from source yourself with the Quick Start above if you'd rather not click through those warnings.
 
 ---
 
@@ -204,9 +264,8 @@ lib/
 ├── services/                    # firebase, livekit, token minting, sync, game, theme
 ├── widgets/                     # chat, reactions, queue, game, share viewer
 └── utils/constants.dart         # theme palette + config
-token-server/                    # optional token server (advanced)
-firestore.rules                  # security rules
-docs/                            # guides, changelogs, screenshots
+firestore.rules                  # security rules (member-gated private config)
+docs/                            # platform setup, audit notes, screenshots
 ```
 
 ---
@@ -215,24 +274,44 @@ docs/                            # guides, changelogs, screenshots
 
 | Web | Android | iOS | Windows | macOS | Linux |
 |:---:|:---:|:---:|:---:|:---:|:---:|
-| ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ |
+
+⚠️ Linux builds and runs, but is the least-tested target — issues welcome.
+
+---
+
+## ⚠️ Honest Limitations
+
+No hand-waving — here's exactly where SIMUL falls short today:
+
+- **LiveKit secret sharing is member-gated, not fully secret.** A genuine room member can extract the host's LiveKit API secret, since their client must read it to connect. Fine for a friends-and-family deployment; **not safe for a public, multi-tenant product** without moving to server-minted tokens (a Cloud Function, not yet implemented).
+- **No Firebase App Check, no rate limiting.** A determined bad actor could spam writes. Same trust boundary as above.
+- **Light/dark mode doesn't cover every screen yet.** The theme engine, Settings, and About screens are fully migrated; a few others still render dark-only. [Tracked issue](docs/issues/dark-mode-support.md) — good first PR.
+- **`videoSync` log grows unless pruned.** The host can delete it, but there's no automatic cleanup yet.
+- **Viewer audio control is mute-only**, not a volume slider — a LiveKit Flutter SDK limitation. A web-only slider is possible but not built.
+- **No automated test suite** beyond a couple of unit tests.
+- **Unsigned release binaries** (see [Downloads](#-downloads)) — expect OS warnings until code-signing is set up.
+
+If any of these matter to your use case, [`docs/AUDIT_v1.3.0.md`](docs/AUDIT_v1.3.0.md) has the full technical writeup and upgrade paths.
 
 ---
 
 ## 🗺️ Roadmap
 
-- [ ] Full app-wide light/dark coverage — [tracked issue](docs/issues/dark-mode-support.md)
-- [ ] Web-only volume slider for shared audio
+- [ ] Server-minted LiveKit tokens (closes the member-extraction gap above)
+- [ ] Firebase App Check + basic rate limiting
+- [ ] Full app-wide light/dark coverage
 - [ ] Automated test suite
-- [ ] Real screenshots & demo GIF
+- [ ] Web-only volume slider for shared audio
+- [ ] `videoSync` auto-cleanup / TTL
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Read [CONTRIBUTING.md](CONTRIBUTING.md), then look for
+Contributions are very welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Look for
 [`good first issue`](https://github.com/ArsalanKaleem/simul-watch-together-app/labels/good%20first%20issue)
-labels. Please run `flutter analyze` before opening a PR.
+labels to get started, and run `flutter analyze` before opening a PR.
 
 ---
 
@@ -251,8 +330,11 @@ labels. Please run `flutter analyze` before opening a PR.
 Distributed under the **MIT License**. See [LICENSE](LICENSE) for details.
 
 <div align="center">
+<br/>
 
-**If you find SIMUL useful, consider giving it a ⭐ — it really helps!**
+### If SIMUL is useful to you, a ⭐ genuinely helps other people find it.
+
+**[🌐 Try the live demo](https://simul-deskweb-app.web.app/) · [📦 Download a build](https://github.com/ArsalanKaleem/simul-watch-together-app/releases) · [🐛 Report a bug](https://github.com/ArsalanKaleem/simul-watch-together-app/issues)**
 
 <sub>Built with Flutter, Firebase & LiveKit · © 2026 Arsalan Kaleem</sub>
 
