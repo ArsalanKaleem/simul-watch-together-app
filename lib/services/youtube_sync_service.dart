@@ -136,7 +136,10 @@ class YouTubeSyncService extends ChangeNotifier {
       String roomId, String senderId, double position, bool isPlaying) async {
     final drift        = (position - _lastSentPosition).abs();
     final stateChanged = isPlaying != _lastSentPlaying;
-    if (drift < 2.0 && !stateChanged) return;
+    // Broadcast roughly every ~1.5s of playback (or immediately on a
+    // play/pause change) so late joiners and drifting clients converge
+    // inside a second or two without hammering Firestore.
+    if (drift < 1.5 && !stateChanged) return;
     _lastSentPosition = position;
     _lastSentPlaying  = isPlaying;
     return _send(roomId, senderId,

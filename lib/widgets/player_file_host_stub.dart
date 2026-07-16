@@ -1,2 +1,4 @@
-// Non-io platforms (web): temp-file hosting unavailable; callers fall back.
-Future<String?> writePlayerHtmlToFile(String html) async => null;
+// Non-io platforms (web): no local server needed — the web engine embeds a
+// real <iframe> in the page, which already has a proper origin.
+Future<String?> hostPlayerHtml(String html) async => null;
+void disposePlayerHost() {}

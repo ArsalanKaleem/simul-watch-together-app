@@ -31,6 +31,12 @@ class RoomScreen extends StatefulWidget {
 
 class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  // Sync tuning. Tolerance is deliberately ~1s: tight enough that nobody is
+  // visibly out of step, loose enough that we aren't re-seeking (and
+  // re-buffering) on normal jitter.
+  static const double _kSyncDriftTolerance  = 1.0;
+  static const double _kSyncTransitEstimate = 0.4;
+
   final _urlCtrl     = TextEditingController();
   // The placeholder's URL field and the below-video URL field are in
   // DIFFERENT subtrees that swap in the same frame when a video loads. They
@@ -93,7 +99,11 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
           settings.apiSecret,
         );
       } else if (!fb.isHost && !settings.hasUserConfig) {
-        final shared = fb.roomLiveKitConfig;
+        // Fetched here (not read off the room doc) because the config now
+        // lives in rooms/{id}/private/config, which only room MEMBERS may
+        // read. initializeRoom above has already established membership, so
+        // this read is permitted; for a non-member it fails closed.
+        final shared = await fb.fetchLiveKitConfig(widget.roomId);
         if (shared != null) {
           final adopted = await settings.adoptSharedConfig(
             url: shared['url']!,
@@ -169,8 +179,24 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
             if (url != null && url.isNotEmpty) _showSharedLink(url, by);
           case 'sync':
             final vs = _videoKey.currentState;
-            if (vs != null && (vs.currentPosition - pos).abs() > 3.0) {
-              vs.syncTo(pos, playing);
+            if (vs == null) break;
+
+            // Latency compensation: `pos` was captured on the sender's
+            // device, then travelled through Firestore. If the video is
+            // playing it has advanced since. Nudge the target forward by a
+            // small transit estimate so we don't constantly re-seek people
+            // slightly behind. (Firestore's serverTimestamp isn't usable for
+            // this — client clock skew is often larger than the latency
+            // we're correcting.)
+            final target = playing ? pos + _kSyncTransitEstimate : pos;
+            final drift  = (vs.currentPosition - target).abs();
+
+            // Correct if the play/pause state disagrees at all, or if we've
+            // drifted past roughly a second. The old 3s threshold let people
+            // sit visibly out of step; seeking on every tiny delta would
+            // stutter, so ~1s is the sweet spot.
+            if (vs.isPlaying != playing || drift > _kSyncDriftTolerance) {
+              vs.syncTo(target, playing);
             }
         }
       });
@@ -391,7 +417,16 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
   // ── Voice chat ─────────────────────────────────────────────────────────────
 
   Future<void> _toggleVoice() async {
-    await context.read<LiveKitService>().toggleMic();
+    final lk = context.read<LiveKitService>();
+    final wasOn = lk.isMicOn;
+    await lk.toggleMic();
+    if (!mounted) return;
+    // Surface mic failures — a dead mic button with no explanation was
+    // indistinguishable from the app being broken (the usual cause on
+    // mobile is a missing/denied OS permission: see docs/PLATFORM_SETUP.md).
+    if (!wasOn && !lk.isMicOn && lk.lastError != null) {
+      _snack(lk.lastError!, isError: true);
+    }
   }
 
   // Builds the AppBar's action icons, adapting to available width so they
@@ -710,14 +745,23 @@ class _RoomScreenState extends State<RoomScreen> with TickerProviderStateMixin {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final wide = constraints.maxWidth >= 1000;
-          return wide
-              ? _wideBody(participantCount, isSharing)
-              : _mobileBody(participantCount, isSharing);
+          // Chat is an overlay in the BODY, not Scaffold.floatingActionButton.
+          // As the FAB it was unclickable (hit-testing can't reach a child
+          // painted outside its parent) and it sat above the drawer. In the
+          // body it hit-tests correctly and the drawer covers it properly.
+          return Stack(
+            children: [
+              wide
+                  ? _wideBody(participantCount, isSharing)
+                  : _mobileBody(participantCount, isSharing),
+              Positioned.fill(
+                child: FloatingChat(
+                    roomId: widget.roomId, userName: widget.userName),
+              ),
+            ],
+          );
         },
       ),
-      floatingActionButton: FloatingChat(
-          roomId: widget.roomId, userName: widget.userName),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 

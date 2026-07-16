@@ -41,8 +41,9 @@ class FirebaseService extends ChangeNotifier {
   List<String> get participantIds   => _participantIds;
   List<String> get participantNames => _participantNames;
 
-  /// LiveKit credentials the host published into the room document so
-  /// joiners get configured automatically ({url, apiKey, apiSecret}).
+  /// LiveKit credentials the host published for this room, once fetched.
+  /// Lives in rooms/{id}/private/config — readable ONLY by room members
+  /// (see firestore.rules), never on the room document itself.
   Map<String, String>? _roomLiveKit;
   Map<String, String>? get roomLiveKitConfig => _roomLiveKit;
 
@@ -136,7 +137,6 @@ class FirebaseService extends ChangeNotifier {
       final userNames = List<String>.from(data['userNames'] ?? []);
       final maxUsers  = (data['maxUsers'] as int?) ?? 20;
       final hostId    = data['hostId'] as String? ?? '';
-      _roomLiveKit    = _parseLiveKit(data['livekit']);
 
       // Capacity check (skip if user already in room)
       if (!userIds.contains(uid) && userIds.length >= maxUsers) {
@@ -196,7 +196,6 @@ class FirebaseService extends ChangeNotifier {
         _moderatorIds    = List<String>.from(data['moderatorIds'] ?? []);
         _participantIds  = List<String>.from(data['userIds']      ?? []);
         _participantNames = List<String>.from(data['userNames']   ?? []);
-        _roomLiveKit     = _parseLiveKit(data['livekit']);
       }
     }
     _listenToRoom(roomId);
@@ -214,20 +213,58 @@ class FirebaseService extends ChangeNotifier {
     return null;
   }
 
-  /// Host publishes their LiveKit credentials into the room doc so joiners
-  /// are configured automatically. Merge-write; never throws.
+  DocumentReference<Map<String, dynamic>> _privateConfigRef(String roomId) =>
+      _db.collection('rooms').doc(roomId).collection('private').doc('config');
+
+  /// Host publishes their LiveKit credentials for this room.
   ///
-  /// SECURITY NOTE: anyone authenticated who knows the room code can read
-  /// these. Acceptable for a friends-and-family app where sharing the code
-  /// already implies trust — documented in docs/SECURITY_NOTES.md.
+  /// These go in rooms/{id}/private/config — NOT on the room document.
+  /// Firestore rules are document-level, so a field on the room doc is
+  /// readable by anyone who can read the room (i.e. anyone with the code).
+  /// A separate document can be gated: only members may read it, only the
+  /// host may write it.
+  ///
+  /// SECURITY (be clear-eyed): this stops strangers and room-code guessers,
+  /// but a genuine ROOM MEMBER can still extract the secret — they must be
+  /// able to read it to connect. Removing that requires server-minted tokens
+  /// (see docs/AUDIT_v1.3.0.md). Never throws.
   Future<void> publishLiveKitConfig(
       String roomId, String url, String apiKey, String apiSecret) async {
     try {
-      await _db.collection('rooms').doc(roomId).set({
-        'livekit': {'url': url, 'apiKey': apiKey, 'apiSecret': apiSecret},
-      }, SetOptions(merge: true));
+      await _privateConfigRef(roomId).set({
+        'url': url,
+        'apiKey': apiKey,
+        'apiSecret': apiSecret,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      _roomLiveKit = {'url': url, 'apiKey': apiKey, 'apiSecret': apiSecret};
+
+      // Migration: scrub the legacy plaintext field from rooms created by
+      // older builds, so upgrading actually reduces exposure instead of just
+      // adding a second copy.
+      await _db
+          .collection('rooms')
+          .doc(roomId)
+          .update({'livekit': FieldValue.delete()}).catchError((_) {});
     } catch (e) {
       debugPrint('publishLiveKitConfig failed: $e');
+    }
+  }
+
+  /// Fetches the host's LiveKit config. MUST be called after the caller is a
+  /// room member, or the rules will (correctly) deny the read.
+  /// Returns null when absent or not permitted.
+  Future<Map<String, String>?> fetchLiveKitConfig(String roomId) async {
+    try {
+      final snap = await _privateConfigRef(roomId).get();
+      if (!snap.exists) return null;
+      final parsed = _parseLiveKit(snap.data());
+      if (parsed != null) _roomLiveKit = parsed;
+      return parsed;
+    } catch (e) {
+      // permission-denied is expected for non-members — not an error.
+      debugPrint('fetchLiveKitConfig: $e');
+      return null;
     }
   }
 
@@ -243,7 +280,6 @@ class FirebaseService extends ChangeNotifier {
       _isHost           = data['hostId'] == uid;
       _hostId           = data['hostId'] as String?;
       _moderatorIds     = List<String>.from(data['moderatorIds'] ?? []);
-      _roomLiveKit      = _parseLiveKit(data['livekit']) ?? _roomLiveKit;
 
       if (_currentUser != null && _participantIds.length >= 2) {
         final pid = _participantIds.firstWhere(

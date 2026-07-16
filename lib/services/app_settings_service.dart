@@ -22,6 +22,7 @@ class AppSettingsService extends ChangeNotifier {
   static const _kKey = 'livekit_api_key';
   static const _kSecret = 'livekit_api_secret';
   static const _kTokenUrl = 'livekit_token_url';
+  static const _kAdopted  = 'livekit_adopted';
 
   final FlutterSecureStorage _storage;
 
@@ -37,13 +38,25 @@ class AppSettingsService extends ChangeNotifier {
   String _tokenUrl = '';
   bool _loaded = false;
 
+  /// True when this config came from the room host rather than from this
+  /// user. Adopted credentials are USABLE but never rendered in the UI —
+  /// the joiner shouldn't be handed someone else's API secret to read,
+  /// copy, or reuse outside the app.
+  bool _adopted = false;
+  bool get isAdopted => _adopted;
+
   bool get isLoaded => _loaded;
 
-  // Raw stored values (may be empty).
-  String get liveKitUrlRaw => _url;
+  // Values for the SETTINGS UI only. When the config was adopted from the
+  // host these return empty strings, so the screen can't display or leak
+  // them. Token minting uses the internal fields below instead.
+  String get liveKitUrlRaw => _adopted ? '' : _url;
+  String get tokenUrlRaw   => _adopted ? '' : _tokenUrl;
+  String get apiKeyForUi   => _adopted ? '' : _apiKey;
+
+  // Internal use (token minting) — never bind these to a widget.
   String get apiKey => _apiKey;
   String get apiSecret => _apiSecret;
-  String get tokenUrlRaw => _tokenUrl;
 
   /// Effective LiveKit websocket URL: what the user stored, else the dev default.
   String get liveKitUrl => _url.isNotEmpty ? _url : AppConfig.liveKitUrl;
@@ -67,7 +80,8 @@ class AppSettingsService extends ChangeNotifier {
   /// room's auto-adopt logic both need to know "did a human configure this",
   /// not "does some fallback exist".
   bool get hasUserConfig =>
-      _url.isNotEmpty || _apiKey.isNotEmpty || _tokenUrl.isNotEmpty;
+      !_adopted &&
+      (_url.isNotEmpty || _apiKey.isNotEmpty || _tokenUrl.isNotEmpty);
 
   /// Adopts LiveKit credentials shared through a room document (the host
   /// publishes theirs so joiners are configured automatically). Only applies
@@ -80,7 +94,13 @@ class AppSettingsService extends ChangeNotifier {
   }) async {
     if (hasUserConfig) return false;
     if (url.isEmpty || apiKey.isEmpty || apiSecret.isEmpty) return false;
-    await save(url: url, apiKey: apiKey, apiSecret: apiSecret);
+    // Re-adopting the identical config is a no-op (avoids a pointless write
+    // + notify on every room entry).
+    if (_adopted && _url == url && _apiKey == apiKey && _apiSecret == apiSecret) {
+      return false;
+    }
+    await save(
+        url: url, apiKey: apiKey, apiSecret: apiSecret, adopted: true);
     return true;
   }
 
@@ -90,6 +110,7 @@ class AppSettingsService extends ChangeNotifier {
       _apiKey = (await _storage.read(key: _kKey)) ?? '';
       _apiSecret = (await _storage.read(key: _kSecret)) ?? '';
       _tokenUrl = (await _storage.read(key: _kTokenUrl)) ?? '';
+      _adopted  = (await _storage.read(key: _kAdopted)) == '1';
     } catch (e) {
       debugPrint('[Settings] load failed: $e');
     } finally {
@@ -103,7 +124,9 @@ class AppSettingsService extends ChangeNotifier {
     required String apiKey,
     required String apiSecret,
     String tokenUrl = '',
+    bool adopted = false,
   }) async {
+    _adopted = adopted;
     _url = url.trim();
     _apiKey = apiKey.trim();
     _apiSecret = apiSecret.trim();
@@ -112,11 +135,14 @@ class AppSettingsService extends ChangeNotifier {
     await _storage.write(key: _kKey, value: _apiKey);
     await _storage.write(key: _kSecret, value: _apiSecret);
     await _storage.write(key: _kTokenUrl, value: _tokenUrl);
+    await _storage.write(key: _kAdopted, value: _adopted ? '1' : '0');
     notifyListeners();
   }
 
   Future<void> clear() async {
     _url = _apiKey = _apiSecret = _tokenUrl = '';
+    _adopted = false;
+    await _storage.delete(key: _kAdopted);
     await _storage.delete(key: _kUrl);
     await _storage.delete(key: _kKey);
     await _storage.delete(key: _kSecret);

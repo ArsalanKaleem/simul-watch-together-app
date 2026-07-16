@@ -182,20 +182,27 @@ YtWebHandle? createYtWebPlayer({
   ui_web.platformViewRegistry.registerViewFactory(viewType, (int viewId) {
     final f = web.document.createElement('iframe') as web.HTMLIFrameElement;
     final origin = web.window.location.origin;
-    f.src = 'https://www.youtube.com/embed/$videoId'
-        '?enablejsapi=1&autoplay=1&controls=1&rel=0&playsinline=1'
-        '&iv_load_policy=3&origin=$origin';
-    f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
-    // YouTube's 2025 Required-Minimum-Functionality enforcement rejects
-    // embeds whose requests carry no referrer (Error 153). Browsers default
-    // to this policy anyway, but hosting pages/CDNs can override it — set it
-    // explicitly on the frame so the referrer always flows.
+
+    // ORDER MATTERS: referrerPolicy must be set BEFORE src.
+    //
+    // The browser resolves an iframe's referrer policy at the moment the URL
+    // is assigned. Setting src first and the policy afterwards means the
+    // request already went out under the default policy — which is why the
+    // joining client kept getting Error 153 while the host (whose player was
+    // created down a different path) worked.
     f.referrerPolicy = 'strict-origin-when-cross-origin';
+    f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
     f.setAttribute('frameborder', '0');
     f.setAttribute('allowfullscreen', 'true');
     f.style.border = 'none';
     f.style.width = '100%';
     f.style.height = '100%';
+
+    // Assign src LAST, once the policy above is in force.
+    f.src = 'https://www.youtube.com/embed/$videoId'
+        '?enablejsapi=1&autoplay=1&controls=1&rel=0&playsinline=1'
+        '&iv_load_policy=3&origin=$origin';
+
     handle.attachFrame(f);
     return f;
   });

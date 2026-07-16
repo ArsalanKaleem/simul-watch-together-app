@@ -36,10 +36,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     final s = context.read<AppSettingsService>();
     _url = TextEditingController(text: s.liveKitUrlRaw);
-    _key = TextEditingController(text: s.apiKey);
-    _secret = TextEditingController(text: s.apiSecret);
+    _key = TextEditingController(text: s.apiKeyForUi);
+    // Never seeded when adopted — see AppSettingsService.apiKeyForUi.
+    _secret = TextEditingController(text: s.isAdopted ? '' : s.apiSecret);
     _tokenUrl = TextEditingController(text: s.tokenUrlRaw);
-    _showAdvanced = s.tokenUrlRaw.isNotEmpty && s.apiKey.isEmpty;
+    _showAdvanced = s.tokenUrlRaw.isNotEmpty && s.apiKeyForUi.isEmpty;
   }
 
   @override
@@ -107,6 +108,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 _StatusBanner(configured: settings.hasUserConfig, c: c),
                 const SizedBox(height: 16),
+                if (settings.isAdopted) ...[
+                  _HostProvidedCard(
+                    c: c,
+                    onUseOwn: () async {
+                      await context.read<AppSettingsService>().clear();
+                      if (!context.mounted) return;
+                      _url.clear();
+                      _key.clear();
+                      _secret.clear();
+                      _tokenUrl.clear();
+                      setState(() {});
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 _SetupTutorial(c: c),
                 const SizedBox(height: 24),
                 Text('LiveKit connection',
@@ -523,4 +539,62 @@ class _TutorialStep extends StatelessWidget {
           ],
         ),
       );
+}
+
+
+/// Shown to someone who joined a room whose host shares their LiveKit setup.
+/// Deliberately displays NO values — the joiner can use the connection but is
+/// never shown the host's key or secret.
+class _HostProvidedCard extends StatelessWidget {
+  final SimulPalette c;
+  final Future<void> Function() onUseOwn;
+  const _HostProvidedCard({required this.c, required this.onUseOwn});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: c.success.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: c.success.withValues(alpha: 0.35)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.lock_outline_rounded, color: c.success, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text('Provided by the room host',
+                style: TextStyle(
+                    color: c.text, fontSize: 14, fontWeight: FontWeight.w700)),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        Text(
+          'Voice and screen sharing are set up for you — nothing to do. '
+          'The connection details are held privately on this device and '
+          'are not shown here.',
+          style: TextStyle(color: c.faint, fontSize: 12.5, height: 1.5),
+        ),
+        const SizedBox(height: 6),
+        Row(children: [
+          Icon(Icons.key_off_rounded, color: c.subtle, size: 13),
+          const SizedBox(width: 6),
+          Text('URL · API key · secret hidden',
+              style: TextStyle(color: c.subtle, fontSize: 11.5)),
+        ]),
+        const SizedBox(height: 12),
+        TextButton(
+          onPressed: onUseOwn,
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: Text('Use my own LiveKit instead',
+              style: TextStyle(color: c.accent, fontSize: 12.5)),
+        ),
+      ]),
+    );
+  }
 }

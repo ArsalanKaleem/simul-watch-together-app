@@ -306,8 +306,15 @@ class LiveKitService extends ChangeNotifier {
 
   // ── Microphone (voice chat) ───────────────────────────────────────────
 
-  Future<void> startMic() async {
-    if (_room?.localParticipant == null) return;
+  /// Returns true if the mic actually came on. On failure [lastError] holds a
+  /// message meant for humans — the caller should surface it, because a
+  /// silently-failing mic button is indistinguishable from a broken app.
+  Future<bool> startMic() async {
+    if (_room?.localParticipant == null) {
+      _lastError = 'Not connected to voice yet — check Settings.';
+      notifyListeners();
+      return false;
+    }
     try {
       await _room!.localParticipant!.setMicrophoneEnabled(true);
       _micOn = true;
@@ -315,10 +322,23 @@ class LiveKitService extends ChangeNotifier {
       // Tapping mic is a user gesture → also unblock hearing others.
       await enableAudioPlayback();
       notifyListeners();
+      return true;
     } catch (e) {
       debugPrint('[LiveKit] startMic error: $e');
-      _lastError = 'Microphone error: $e';
+      final msg = e.toString().toLowerCase();
+      // Translate the platform's raw error into something the person can
+      // act on. Permission failures are BY FAR the most common cause on
+      // mobile (missing manifest entry, or the OS prompt was denied).
+      if (msg.contains('permission') || msg.contains('notallowed')) {
+        _lastError = 'Microphone permission denied. Enable it for SIMUL in '
+            'your device settings, then tap the mic again.';
+      } else if (msg.contains('notfound') || msg.contains('device')) {
+        _lastError = 'No microphone found on this device.';
+      } else {
+        _lastError = "Couldn't turn on the microphone. $e";
+      }
       notifyListeners();
+      return false;
     }
   }
 

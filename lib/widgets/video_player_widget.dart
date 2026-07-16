@@ -155,12 +155,13 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       await c.setPopupWindowPolicy(win.WebviewPopupWindowPolicy.deny);
       final html = _buildHtml(widget.videoId, windows: true);
       // webview_windows has no baseUrl equivalent, so an in-memory string
-      // can never send a referrer → guaranteed Error 153. Loading the same
-      // page from a real file:// URL (with the referrer meta tag) is the
-      // community-verified fix. String load kept as a last resort.
-      final fileUrl = await writePlayerHtmlToFile(html);
-      if (fileUrl != null) {
-        await c.loadUrl(fileUrl);
+      // can never send a referrer → guaranteed Error 153. A file:// URL
+      // doesn't fix it either (file URLs send no referrer). Serving the page
+      // from a loopback HTTP server gives it a real origin, so the referrer
+      // flows and YouTube serves the player. String load kept as a fallback.
+      final hostedUrl = await hostPlayerHtml(html);
+      if (hostedUrl != null) {
+        await c.loadUrl(hostedUrl);
       } else {
         await c.loadStringContent(html);
       }
@@ -202,10 +203,10 @@ class VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     } else if (_engine == _Engine.windowsWebView) {
       final win = _winCtrl;
       if (win != null) {
-        writePlayerHtmlToFile(html).then((fileUrl) {
+        hostPlayerHtml(html).then((hostedUrl) {
           if (!mounted) return;
-          if (fileUrl != null) {
-            win.loadUrl(fileUrl);
+          if (hostedUrl != null) {
+            win.loadUrl(hostedUrl);
           } else {
             win.loadStringContent(html);
           }

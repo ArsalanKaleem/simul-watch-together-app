@@ -56,8 +56,13 @@ class _LiveReactionsState extends State<LiveReactions> {
   Widget build(BuildContext context) {
     final svc = context.read<FirebaseService>();
     return Stack(children: [
-      // Floating emojis overlay
-      ...(_floating.map((e) => _AnimatedEmoji(data: e))),
+      // Floating emojis overlay — purely decorative, so it must never
+      // intercept a tap meant for the video/controls underneath.
+      IgnorePointer(
+        child: Stack(children: [
+          ...(_floating.map((e) => _AnimatedEmoji(data: e))),
+        ]),
+      ),
 
       // Reaction bar at bottom
       Positioned(
@@ -68,7 +73,11 @@ class _LiveReactionsState extends State<LiveReactions> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: _emojis.map((emoji) =>
                 GestureDetector(
-                  onTap: () => svc.sendReaction(widget.roomId, emoji),
+                  // Guarded: an offline write here used to throw an
+                  // unhandled async error straight out of the tap handler.
+                  onTap: () => svc
+                      .sendReaction(widget.roomId, emoji)
+                      .catchError((_) {}),
                   child: Container(
                     margin: const EdgeInsets.symmetric(horizontal: 6),
                     padding: const EdgeInsets.all(8),
